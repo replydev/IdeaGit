@@ -252,7 +252,7 @@ tests = [
 ]
 deviations = [
   "Bug fix: an edge to a not-loaded parent is written to that parent's slot, not the first free slot (upstream swaps parents when several are not loaded and processed out of order)",
-  "Not-loaded parents with the same first child are processed in first-seen order (upstream: HashMap order)",
+  "Not-loaded parents sharing a smallest child are ordered by first appearance; Rust HashMap order is random per run (Java's is arbitrary but reproducible), so this keeps synthetic ids deterministic",
 ]
 
 [modules."ig-log::permanent::permanent_linear_graph_impl"]

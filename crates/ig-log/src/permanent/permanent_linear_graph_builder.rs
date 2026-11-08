@@ -8,8 +8,9 @@
 //!   commit has several unloaded parents and they are processed out of parent order, the edges (and
 //!   therefore `PermanentGraph.allCommits` parents) get the wrong targets. Here the slot is found
 //!   by parent position, like for loaded parents.
-//! - Unloaded parents with the same smallest child node are processed in the order they were first
-//!   seen (upstream: `HashMap` iteration order), so their synthetic ids are deterministic.
+//! - Unloaded parents sharing a smallest child node are ordered by first appearance. Rust
+//!   `HashMap` order is random per run (Java's is arbitrary but reproducible), so this keeps the
+//!   synthetic ids deterministic. This is a determinism adaptation, not an upstream bug fix.
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -159,12 +160,9 @@ impl<'a, CommitId: Eq + Hash + Clone> PermanentLinearGraphBuilder<'a, CommitId> 
     fn fix_underdone_edges(&mut self, mut not_loaded_commit_to_id: impl FnMut(&CommitId) -> i32) {
         let up_adjacent_nodes = std::mem::take(&mut self.up_adjacent_nodes);
         let mut commit_ids: Vec<(&CommitId, &UpNodes)> = up_adjacent_nodes.iter().collect();
-        commit_ids.sort_by_key(|(_, entry)| {
-            (
-                entry.up_nodes.iter().min().copied().unwrap_or(i32::MAX),
-                entry.first_seen,
-            )
-        });
+        // `up_nodes` are pushed in ascending node order and `first_seen` grows with the smallest
+        // one, so this is upstream's smallest-child order, with ties kept in first-seen order.
+        commit_ids.sort_by_key(|(_, entry)| entry.first_seen);
         for (not_load_commit, entry) in commit_ids {
             let not_load_id = not_loaded_commit_to_id(not_load_commit);
             for &up_node_index in &entry.up_nodes {
