@@ -98,4 +98,4 @@ deviations = [
 [modules."ig-git::roots"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
 upstream = ["platform/vcs-impl/src/com/intellij/openapi/vcs/roots/VcsRootDetectorImpl.java"]
-deviations = ["Simplified: enclosing root + bounded downward scan with a fixed skip list"]
+deviations = ["Simplified: enclosing root below the user home + bounded downward scan; skips a fixed list of tool/cache dirs instead of .gitignore'd dirs"]
