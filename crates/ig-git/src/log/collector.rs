@@ -5,9 +5,16 @@
 //! `git log -m` omits the record for a parent whose tree equals the merge commit's; the collector
 //! then reads the tree hashes and inserts empty records for such parents.
 //!
-//! Deviation: errors upstream only logs (reading tree hashes fails, a tree hash is missing) drop
-//! the incomplete commit or treat the parent as different; the error is kept for
-//! [`GitLogRecordCollector::take_error`].
+//! Deviation: errors upstream only logs (reading tree hashes fails) drop the incomplete commit;
+//! the error is kept for [`GitLogRecordCollector::take_error`]. A missing commit or parent tree
+//! hash (upstream asserts, and a missing parent tree would then throw an NPE) is likewise recorded
+//! there, and the parent is skipped (no empty record is inserted for it).
+//!
+//! Not ported: `GitLogUnorderedRecordCollector`. It is only used by compressed details, which are
+//! not ported (see `log/util.rs`).
+//!
+//! Note: the linear lookup of a hash in `hash_to_record` assumes the records of one hash are
+//! consecutive, as git emits them (so at most a couple of entries are pending).
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -136,22 +143,37 @@ where
         Ok(())
     }
 
+    fn record_error(&mut self, message: String) {
+        self.error
+            .get_or_insert(crate::error::GitError::Command(message));
+    }
+
     /// `fillWithEmptyRecords`: an empty record for each parent with the commit's tree.
     fn fill_with_empty_records(
-        &self,
+        &mut self,
         records: &mut Vec<R>,
         hash_to_tree_map: &HashMap<String, String>,
     ) {
         let first = records[0].as_record();
+        let commit_hash = first.hash().to_string();
         let parents: Vec<String> = first
             .parents_hashes()
             .iter()
             .map(|s| s.to_string())
             .collect();
         let commit_tree_hash = hash_to_tree_map.get(first.hash()).cloned();
+        if commit_tree_hash.is_none() {
+            self.record_error(format!("No tree hash for commit {commit_hash}"));
+        }
         for (parent_index, parent) in parents.iter().enumerate() {
             // sometimes a merge commit is identical to all its parents: we get one empty record
             let parent_tree_hash = hash_to_tree_map.get(parent);
+            if parent_tree_hash.is_none() {
+                self.record_error(format!(
+                    "No tree hash for parent {parent} of commit {commit_hash}"
+                ));
+                continue;
+            }
             if commit_tree_hash.is_some()
                 && parent_tree_hash == commit_tree_hash.as_ref()
                 && records.len() < parents.len()
@@ -192,4 +214,63 @@ fn get_hash_to_tree_map(
         .into_iter()
         .map(|record| (record.hash().to_string(), record.tree_hash().to_string()))
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::console::NullConsole;
+    use crate::log::parser::OptionValues;
+    use std::sync::Arc;
+
+    fn record(hash: &str, parents: &str) -> GitLogRecord {
+        let mut options: OptionValues = Default::default();
+        options[GitLogOption::Hash.index()] = Some(hash.to_string());
+        options[GitLogOption::Parents.index()] = Some(parents.to_string());
+        GitLogRecord::new(options, true)
+    }
+
+    #[test]
+    fn missing_trees_are_reported_and_parents_skipped() {
+        let git = Git::new(
+            "git",
+            crate::version::GitVersion::NULL,
+            Arc::new(NullConsole),
+        );
+        let root = Path::new("/nonexistent");
+        let mut out: Vec<Vec<GitLogRecord>> = Vec::new();
+        let mut collector = GitLogRecordCollector::new(
+            &git,
+            root,
+            |records| out.push(records),
+            |r: &GitLogRecord| GitLogRecord::new(r.options().clone(), true),
+        );
+
+        // parent tree missing: reported, no empty record
+        let trees = HashMap::from([("c".to_string(), "t".to_string())]);
+        let mut records = vec![record("c", "p1 p2")];
+        collector.fill_with_empty_records(&mut records, &trees);
+        assert_eq!(records.len(), 1);
+        let error = collector.take_error().expect("parent tree is missing");
+        assert!(error.to_string().contains("parent p1"), "{error}");
+
+        // commit tree missing: reported, no empty record
+        let trees = HashMap::from([("p1".to_string(), "t".to_string())]);
+        let mut records = vec![record("c", "p1 p2")];
+        collector.fill_with_empty_records(&mut records, &trees);
+        assert_eq!(records.len(), 1);
+        let error = collector.take_error().expect("commit tree is missing");
+        assert!(error.to_string().contains("commit c"), "{error}");
+
+        // all trees present: the identical parent gets an empty record
+        let trees = HashMap::from([
+            ("c".to_string(), "t".to_string()),
+            ("p1".to_string(), "t".to_string()),
+            ("p2".to_string(), "other".to_string()),
+        ]);
+        let mut records = vec![record("c", "p1 p2")];
+        collector.fill_with_empty_records(&mut records, &trees);
+        assert_eq!(records.len(), 2);
+        assert!(collector.take_error().is_none());
+    }
 }

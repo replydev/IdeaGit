@@ -1,6 +1,12 @@
 //! Feeding `git log` output line by line to a [`GitLogParser`], without storing it.
 //!
 //! Port of `plugins/git4idea/backend/src/history/GitLogOutputSplitter.java`.
+//!
+//! Deviation: the first parse error wins (upstream keeps the last); a non-zero exit still
+//! overrides, as upstream.
+//!
+//! Not ported: `record.setUsedHandler`; a panicking consumer propagates (upstream catches
+//! `Throwable` in the listener).
 
 use crate::console::OutputKind;
 use crate::error::{GitError, Result};
@@ -146,5 +152,72 @@ mod tests {
         assert!(message.contains("first"), "{message}");
         assert!(!message.contains("second"), "{message}");
         assert_eq!(records, 0);
+    }
+
+    fn two_option_parser() -> GitLogParser<DefaultGitLogRecordBuilder> {
+        GitLogParser::new(
+            DefaultGitLogRecordBuilder,
+            true,
+            NameStatus::None,
+            &[GitLogOption::Hash, GitLogOption::Parents],
+        )
+    }
+
+    #[test]
+    fn mid_stream_error_is_first_reported_and_later_records_still_arrive() {
+        let handler = GitHandler::new("/repo", "git", GitCommand::LOG);
+        let mut parser = two_option_parser();
+        let (start, end, sep) = (
+            parser.record_start().to_string(),
+            parser.record_end().to_string(),
+            parser.items_separator().to_string(),
+        );
+        let good = |h: &str| format!("{start}{h}{sep}{end}");
+        let mut hashes: Vec<String> = Vec::new();
+        let mut splitter =
+            GitLogOutputSplitter::new(&handler, &mut parser, |r| hashes.push(r.hash().to_string()));
+        splitter.on_line_available(&good("aaa"), OutputKind::Stdout);
+        splitter.on_line_available(&format!("{start}bad1{end}"), OutputKind::Stdout);
+        // after `clear()` the parser recovers, as upstream
+        splitter.on_line_available(&good("ccc"), OutputKind::Stdout);
+        splitter.on_line_available(&format!("{start}bad2{end}"), OutputKind::Stdout);
+        splitter.on_line_available(&good("ddd"), OutputKind::Stdout);
+        splitter.process_terminated(0);
+        assert!(splitter.has_errors());
+        let message = splitter.report_errors().unwrap_err().to_string();
+        assert!(message.contains("bad1"), "{message}");
+        assert!(!message.contains("bad2"), "{message}");
+        // a record is emitted when the next record starts or at the end of the output
+        assert_eq!(hashes, ["aaa", "ccc", "ddd"]);
+    }
+
+    #[test]
+    fn non_zero_exit_reports_code_and_command_line() {
+        let handler = GitHandler::new("/repo", "git", GitCommand::LOG);
+        let mut parser = two_option_parser();
+        let mut splitter = GitLogOutputSplitter::new(&handler, &mut parser, |_| {});
+        splitter.process_terminated(128);
+        let message = splitter.report_errors().unwrap_err().to_string();
+        assert!(
+            message.contains("The Git process exited with the code 128"),
+            "{message}"
+        );
+        assert!(message.contains("Command line:"), "{message}");
+    }
+
+    #[test]
+    fn non_zero_exit_prefers_stderr_and_overrides_parse_error() {
+        let handler = GitHandler::new("/repo", "git", GitCommand::LOG);
+        let mut parser = two_option_parser();
+        let start = parser.record_start().to_string();
+        let end = parser.record_end().to_string();
+        let mut splitter = GitLogOutputSplitter::new(&handler, &mut parser, |_| {});
+        splitter.on_line_available(&format!("{start}bad{end}"), OutputKind::Stdout);
+        splitter.on_line_available("fatal: boom", OutputKind::Stderr);
+        splitter.process_terminated(1);
+        let message = splitter.report_errors().unwrap_err().to_string();
+        assert!(message.contains("boom"), "{message}");
+        assert!(message.contains("Command line:"), "{message}");
+        assert!(!message.contains("bad"), "{message}");
     }
 }
