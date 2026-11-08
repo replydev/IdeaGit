@@ -10,6 +10,9 @@ pub enum LockingPolicy {
     Write,
 }
 
+/// A git command name plus its locking policy. Write commands exclude each other but not reads.
+/// The policy can differ per invocation (e.g. `stash list` is read-only): use
+/// [`GitCommand::read_locking_command`] for that, with care.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GitCommand {
     name: &'static str,
@@ -66,7 +69,8 @@ impl GitCommand {
     pub const MV: Self = Self::write("mv");
     pub const NOTES: Self = Self::read("notes");
     pub const PULL: Self = Self::write("pull");
-    /// Read: push doesn't modify the index.
+    /// Read: push doesn't modify the index. We still benefit from COMMIT & Co being write
+    /// commands, which prevents HEAD from moving during a push.
     pub const PUSH: Self = Self::read("push");
     pub const REBASE: Self = Self::write("rebase");
     pub const REMOTE: Self = Self::read("remote");
@@ -80,6 +84,7 @@ impl GitCommand {
     pub const SHOW: Self = Self::read("show");
     pub const STASH: Self = Self::write("stash");
     pub const STATUS: Self = Self::read_optional("status");
+    /// Write in the submodule, not in the current root (the submodule's parent).
     pub const SUBMODULE: Self = Self::write("submodule");
     pub const TAG: Self = Self::read("tag");
     pub const UPDATE_INDEX: Self = Self::write("update-index");
@@ -130,6 +135,19 @@ mod tests {
         assert_eq!(
             GitCommand::FETCH.write_locking_command().locking_policy(),
             LockingPolicy::Write
+        );
+    }
+
+    #[test]
+    fn locking_overrides_keep_the_name() {
+        let list = GitCommand::STASH.read_locking_command();
+        assert_eq!(list.locking_policy(), LockingPolicy::Read);
+        assert_eq!(list.name(), "stash");
+        assert_eq!(GitCommand::PUSH.locking_policy(), LockingPolicy::Read);
+        assert_eq!(GitCommand::CLONE.locking_policy(), LockingPolicy::Read);
+        assert_eq!(
+            GitCommand::LS_FILES.locking_policy(),
+            LockingPolicy::ReadOptionalLocking
         );
     }
 }

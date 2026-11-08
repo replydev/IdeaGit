@@ -125,7 +125,8 @@ impl GitVersion {
         !self.is_null() && self.compare(&GitVersion::min()) != Ordering::Less
     }
 
-    /// Upstream `compareTo`: only numbers are compared; NULL is less than any non-NULL version.
+    /// Upstream `compareTo`: only numbers are compared. A NULL `other` makes any non-NULL version
+    /// Greater; a NULL `self` compares as 0.0.0.0 (so it equals a non-NULL 0.0.0.0, as upstream).
     pub fn compare(&self, other: &GitVersion) -> Ordering {
         if other.is_null() {
             return if self.is_null() {
@@ -160,6 +161,9 @@ impl GitVersion {
     }
 }
 
+/// Upstream `equals`: numbers must match, and types must match unless either is `Undefined`.
+/// Like upstream, this is not transitive (`Unix == Undefined == Msys`, but `Unix != Msys`), so
+/// don't use `GitVersion` as a map/set key.
 impl PartialEq for GitVersion {
     fn eq(&self, other: &Self) -> bool {
         if self.compare(other) != Ordering::Equal {
