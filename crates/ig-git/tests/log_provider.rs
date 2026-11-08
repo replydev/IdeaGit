@@ -14,7 +14,7 @@ mod common;
 use std::path::Path;
 
 use common::log_helpers::{default_user, init_master_repo, last, provider, read_all_refs, tac};
-use common::{git, runner};
+use common::{git, git_output, runner};
 use ig_git::log::provider::GitLogProvider;
 use ig_git::log::ref_manager::{LOCAL_BRANCH, TAG};
 use ig_git::log::util::collect_metadata_with_params;
@@ -130,16 +130,20 @@ fn check_full_hash(object_format: &str, hex_size: usize, prefix_len: usize) {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join(format!("{object_format}-repo"));
     std::fs::create_dir_all(&dir).unwrap();
-    git(
-        &dir,
-        &[
-            "init",
-            "-q",
-            "-b",
-            "master",
-            &format!("--object-format={object_format}"),
-        ],
-    );
+    if object_format == "sha1" {
+        git(&dir, &["init", "-q"]);
+    } else {
+        // `--object-format` needs git 2.29
+        let init = git_output(
+            &dir,
+            &["init", "-q", &format!("--object-format={object_format}")],
+        );
+        if !init.status.success() {
+            eprintln!("skipping: git lacks --object-format=sha256");
+            return;
+        }
+    }
+    git(&dir, &["symbolic-ref", "HEAD", "refs/heads/master"]);
     tac(&dir, "initial.txt");
     let root = vcs_root(&dir);
     let provider = provider();
@@ -420,7 +424,8 @@ fn test_loading_details_without_changes() {
 fn fresh_repository_is_empty() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path();
-    git(dir, &["init", "-q", "-b", "master"]);
+    git(dir, &["init", "-q"]);
+    git(dir, &["symbolic-ref", "HEAD", "refs/heads/master"]);
     let root = vcs_root(dir);
     let provider = provider();
     let block = provider

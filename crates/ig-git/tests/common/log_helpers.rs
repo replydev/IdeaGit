@@ -17,10 +17,11 @@ pub fn default_user() -> VcsUser {
     VcsUser::create_user("Test", "test@example.com")
 }
 
-/// `git init -b master` with one commit (the upstream test repositories use `master`).
+/// `git init` on branch `master` (via `symbolic-ref`, `init -b` needs git 2.28) with one commit (the upstream test repositories use `master`).
 pub fn init_master_repo(dir: &Path) -> VcsRoot {
     std::fs::create_dir_all(dir).unwrap();
-    git(dir, &["init", "-q", "-b", "master"]);
+    git(dir, &["init", "-q"]);
+    git(dir, &["symbolic-ref", "HEAD", "refs/heads/master"]);
     tac(dir, "initial.txt");
     vcs_root(dir)
 }
@@ -99,10 +100,11 @@ pub fn commit_at(dir: &Path, file: &str, epoch_seconds: i64) -> String {
     last(dir)
 }
 
-/// `git init -b master` with a first commit at `epoch_seconds`.
+/// `git init` on branch `master` (see [`init_master_repo`]) with a first commit at `epoch_seconds`.
 pub fn init_repo_at(dir: &Path, epoch_seconds: i64) -> VcsRoot {
     std::fs::create_dir_all(dir).unwrap();
-    git(dir, &["init", "-q", "-b", "master"]);
+    git(dir, &["init", "-q"]);
+    git(dir, &["symbolic-ref", "HEAD", "refs/heads/master"]);
     commit_at(dir, "initial.txt", epoch_seconds);
     vcs_root(dir)
 }

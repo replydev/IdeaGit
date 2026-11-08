@@ -31,6 +31,13 @@ pub const SCRUBBED_ENV: &[&str] = &[
     "GIT_CEILING_DIRECTORIES",
     "GIT_NAMESPACE",
     "GIT_PREFIX",
+    // Inherited config overrides. `GIT_CONFIG_KEY_<n>` / `GIT_CONFIG_VALUE_<n>` are indexed and
+    // need no entry of their own: git ignores them once `GIT_CONFIG_COUNT` is removed.
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT",
+    "GIT_CONFIG",
+    "GIT_AUTHOR_DATE",
+    "GIT_COMMITTER_DATE",
 ];
 
 /// Runs git in `dir` with a fixed identity and no global/system config; returns the raw output.
@@ -56,6 +63,7 @@ pub fn git_output_with_env(
     for v in SCRUBBED_ENV {
         cmd.env_remove(v);
     }
+    // explicit variables are set after the removals so they win
     cmd.envs(env.iter().copied());
     cmd.output().expect("git is installed")
 }
@@ -86,10 +94,11 @@ pub fn git(dir: &Path, args: &[&str]) -> String {
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
-/// `git init -b main` with one commit of `a.txt`.
+/// `git init` on branch `main` (via `symbolic-ref`, `init -b` needs git 2.28) with one commit of `a.txt`.
 pub fn init_repo(dir: &Path) {
     std::fs::create_dir_all(dir).unwrap();
-    git(dir, &["init", "-q", "-b", "main"]);
+    git(dir, &["init", "-q"]);
+    git(dir, &["symbolic-ref", "HEAD", "refs/heads/main"]);
     std::fs::write(dir.join("a.txt"), "one\n").unwrap();
     git(dir, &["add", "a.txt"]);
     git(dir, &["commit", "-q", "-m", "initial"]);

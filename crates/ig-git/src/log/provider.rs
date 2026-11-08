@@ -12,6 +12,9 @@
 //!   every read until it has some.
 //! - Branch refs are created in name order (upstream: `HashSet` order); refs and commits gathered
 //!   in sets upstream keep their first-seen order.
+//! - Upstream-inherited gap: a tag that already existed and was moved to a commit outside the
+//!   first block keeps its old hash in `add_old_still_existing_tags` until a full reload.
+//! - Each unmatched tag costs one `git log` process (upstream chunk size 1).
 //! - Not ported: the experimental refs collection (`GitLogExperimentalProvider`), filters
 //!   (`getCommitsMatchingFilter`), full details, containing branches, refresh subscriptions,
 //!   `resolveReference`, submodule root correction and the debug-only data validation.
@@ -20,6 +23,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use ig_log::GraphCommit;
 use ig_log::data::{
     DetailedLogData, Hash, LogData, Requirements, TimedVcsCommit, VcsCommitMetadata, VcsException,
     VcsLogProvider, VcsLogRefManager, VcsRef, VcsRefsContainer, VcsRoot, VcsUser,
@@ -91,7 +95,7 @@ impl GitLogProvider {
         let mut refs: Vec<VcsRef> = Vec::new();
         let mut seen_refs: HashSet<VcsRef> = HashSet::new();
         let mut commits: Vec<VcsCommitMetadata> = Vec::new();
-        let mut seen_commits = HashSet::new();
+        let mut seen_commits: HashSet<Hash> = HashSet::new();
         for tag in unmatched_tags {
             let log_data = collect_metadata_with_params(&self.git, root, &[&max_count, tag])
                 .map_err(vcs_error)?;
@@ -101,7 +105,7 @@ impl GitLogProvider {
                 }
             }
             for c in log_data.commits {
-                if seen_commits.insert(c.clone()) {
+                if seen_commits.insert(c.id().clone()) {
                     commits.push(c);
                 }
             }
@@ -217,8 +221,8 @@ impl VcsLogProvider for GitLogProvider {
             let current_tag_names = self.read_current_tag_names(root)?;
             add_old_still_existing_tags(&mut all_refs, &current_tag_names, ex.previous_refs);
 
-            let mut seen: HashSet<VcsCommitMetadata> = HashSet::new();
-            all_details.retain(|c| seen.insert(c.clone()));
+            let mut seen: HashSet<Hash> = HashSet::new();
+            all_details.retain(|c| seen.insert(c.id().clone()));
 
             let previous_tags: HashSet<&str> = ex.previous_refs.tags().map(|r| r.name()).collect();
             let safe_tags: HashSet<&str> = safe_refs
@@ -240,7 +244,7 @@ impl VcsLogProvider for GitLogProvider {
                     &new_unmatched_tags,
                 )?;
                 for commit in commits_from_tags.commits {
-                    if seen.insert(commit.clone()) {
+                    if seen.insert(commit.id().clone()) {
                         all_details.push(commit);
                     }
                 }
