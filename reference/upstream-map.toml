@@ -396,6 +396,7 @@ deviations = [
   "Unfiltered Normal uses BaseController directly instead of CollapsedController over an all-visible CollapsedGraph (same compiled graph; no collapse/expand/fragment hover)",
   "Branch node ids sorted ascending before the layout builder",
   "No bekIntMap / SortedBaseController yet",
+  "get_children returns an empty list for unknown or not-loaded commits (upstream throws)",
 ]
 
 [modules."ig-log::facade::visible_graph_impl"]

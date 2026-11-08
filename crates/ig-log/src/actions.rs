@@ -6,7 +6,8 @@
 //! Deviations: the AWT `Cursor` becomes [`Cursor`]; the affected element is always a
 //! [`GraphPrintElement`] (the UI passes back what `RowInfo::print_elements` gave it); the
 //! `Runnable` graph updater becomes a [`GraphUpdater`] that the caller hands back to
-//! [`VisibleGraphImpl::run_graph_updater`](crate::facade::visible_graph_impl::VisibleGraphImpl::run_graph_updater).
+//! [`VisibleGraph::run_graph_updater`](crate::visible_graph::VisibleGraph::run_graph_updater),
+//! the only public way to run it (upstream's `Runnable` also rebuilds the print elements).
 
 use std::fmt;
 
@@ -55,7 +56,7 @@ impl GraphUpdater {
         GraphUpdater(Box::new(update))
     }
 
-    pub fn run(self) {
+    pub(crate) fn run(self) {
         (self.0)()
     }
 }

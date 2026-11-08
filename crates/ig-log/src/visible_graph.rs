@@ -46,4 +46,8 @@ pub trait VisibleGraph<Id> {
     fn get_row_info(&self, visible_row: VcsLogVisibleGraphIndex) -> Box<dyn RowInfo<Id> + '_>;
 
     fn get_visible_row_index(&self, id: &Id) -> Option<VcsLogVisibleGraphIndex>;
+
+    /// Runs the graph updater of an action answer and refreshes the printed rows (upstream wraps
+    /// this into the answer's `Runnable`).
+    fn run_graph_updater(&mut self, updater: crate::actions::GraphUpdater);
 }

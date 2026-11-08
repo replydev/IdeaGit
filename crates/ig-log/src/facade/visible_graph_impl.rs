@@ -4,7 +4,7 @@
 //!
 //! Deviations:
 //! - `VisibleGraphImpl` implements `ActionController` itself (upstream: an inner class).
-//! - The graph updater of an answer is run with [`VisibleGraphImpl::run_graph_updater`], which then
+//! - The graph updater of an answer is run with [`VisibleGraph::run_graph_updater`], which then
 //!   rebuilds the print element generator (upstream wraps the `Runnable`).
 //! - `BUTTON_COLLAPSE` / `BUTTON_EXPAND` are reported unsupported until `CollapsedController`
 //!   is ported (Plan 2b); upstream supports them on every non-filtered graph.
@@ -97,12 +97,6 @@ impl<CommitId: 'static> VisibleGraphImpl<CommitId> {
             &self.color_generator,
             self.is_show_long_edges,
         );
-    }
-
-    /// Runs the updater from a [`GraphAnswer`], then rebuilds the print element generator.
-    pub fn run_graph_updater(&mut self, updater: GraphUpdater) {
-        updater.run();
-        self.update_print_element_generator();
     }
 
     /// The controller's compiled graph (`linearGraph`).
@@ -313,6 +307,12 @@ impl<CommitId: 'static> VisibleGraph<CommitId> for VisibleGraphImpl<CommitId> {
             node_id,
             visible_row,
         })
+    }
+
+    /// Runs the updater from a [`GraphAnswer`], then rebuilds the print element generator.
+    fn run_graph_updater(&mut self, updater: GraphUpdater) {
+        updater.run();
+        self.update_print_element_generator();
     }
 
     fn get_visible_row_index(&self, commit_id: &CommitId) -> Option<VcsLogVisibleGraphIndex> {

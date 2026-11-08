@@ -246,11 +246,13 @@ impl<CommitId: CommitIdBounds> PermanentGraph<CommitId> for PermanentGraphImpl<C
         })
     }
 
-    /// # Panics
-    /// If `commit` is not a loaded commit (upstream throws too).
+    /// Deviation: upstream throws for commits without a node; the UI must not crash on a stale id.
     fn get_children(&self, commit: &CommitId) -> Vec<CommitId> {
         let info = &self.parts.permanent_commits_info;
         let commit_index = info.get_node_id(commit);
+        if commit_index < 0 {
+            return Vec::new();
+        }
         info.convert_to_commit_id_list(get_up_nodes(
             &*self.parts.permanent_linear_graph,
             commit_index,
@@ -280,5 +282,36 @@ impl<CommitId: CommitIdBounds> PermanentGraph<CommitId> for PermanentGraphImpl<C
             branch_nodes.insert(info.get_commit_id(node));
         });
         ContainedInBranchCondition::new(branch_nodes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::print::graph_color_getter::GraphColorGetterByNodeFactory;
+
+    #[test]
+    fn unknown_or_not_loaded_commits_do_not_panic() {
+        let factory = GraphColorGetterByNodeFactory::new(|_: &String, layout_index| layout_index);
+        let commits = vec![
+            GraphCommitImpl::create_commit("c".to_string(), vec!["b".to_string()], 3),
+            GraphCommitImpl::create_commit("b".to_string(), vec!["a".to_string()], 2),
+            // "a" is only a parent of "b" here, so it is a not-loaded commit
+        ];
+        let branches: HashSet<String> = ["c".to_string()].into_iter().collect();
+        let graph = PermanentGraphImpl::new_instance(
+            &commits,
+            &factory,
+            |a: &String, b: &String| a.cmp(b),
+            &branches,
+        );
+
+        let unknown = "zzz".to_string();
+        assert!(graph.get_children(&unknown).is_empty());
+        assert!(graph.get_children(&"a".to_string()).is_empty());
+        assert!(graph.get_containing_branches(&unknown).is_empty());
+        assert!(graph.get_containing_branches(&"a".to_string()).is_empty());
+        let _ = graph.get_contained_in_branch_condition(&[unknown]);
+        assert_eq!(graph.get_children(&"b".to_string()), vec!["c".to_string()]);
     }
 }
