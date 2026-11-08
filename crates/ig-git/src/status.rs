@@ -195,7 +195,7 @@ impl Default for StatusOptions {
     }
 }
 
-/// Upstream `GitLineHandler.appendParameters` for `git status`.
+/// Upstream `appendParameters` (private extension in `GitIndexStatusUtil.kt`) for `git status`.
 pub fn status_parameters(version: &GitVersion, opts: StatusOptions) -> Vec<String> {
     let mut p = vec!["--porcelain".to_string(), "-z".to_string()];
     if !opts.with_renames && GitVersionSpecialty::StatusSupportsNoRenames.exists_in(version) {

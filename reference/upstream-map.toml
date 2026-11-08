@@ -82,7 +82,7 @@ upstream = [
   "plugins/git4idea/shared/src/git4idea/GitSvnRemoteBranch.kt",
   "plugins/git4idea/backend/src/GitUtil.java#parseRemoteBranch",
 ]
-deviations = ["Branch names compare case-sensitively (upstream: case-insensitive on case-insensitive file systems)"]
+deviations = ["Branch names compare case-sensitively (upstream: case-insensitive on case-insensitive file systems)", "Remote branches compare by remote name and branch name (upstream also compares urls/refspecs); no ordering defined yet"]
 
 [modules."ig-git::reader"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
@@ -97,5 +97,8 @@ deviations = [
 
 [modules."ig-git::roots"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
-upstream = ["platform/vcs-impl/src/com/intellij/openapi/vcs/roots/VcsRootDetectorImpl.java"]
+upstream = [
+  "platform/vcs-impl/src/com/intellij/openapi/vcs/roots/VcsRootDetectorImpl.java",
+  "plugins/git4idea/backend/src/roots/GitRootChecker.java",
+]
 deviations = ["Simplified: enclosing root below the user home + bounded downward scan; skips a fixed list of tool/cache dirs instead of .gitignore'd dirs"]

@@ -30,6 +30,8 @@ pub enum ConsoleEvent {
 
 /// Receives console events. Implementations must be cheap and non-blocking: they are called from
 /// the thread that runs the git process.
+///
+/// Must not run write commands on the same [`crate::runner::Git`]: the per-project write lock is not re-entrant.
 pub trait ConsoleSink: Send + Sync {
     fn event(&self, event: ConsoleEvent);
 }

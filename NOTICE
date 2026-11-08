@@ -6,7 +6,7 @@ This product includes software ported from IntelliJ IDEA Community Edition
 Copyright 2000-2026 JetBrains s.r.o. and contributors,
 licensed under the Apache License, Version 2.0.
 
-Each ported Rust module names its upstream source files in its module documentation;
+Ported Rust modules name their upstream sources in their documentation;
 reference/upstream-map.toml lists all of them together with the upstream commit they match.
 
 The NOTICE file of intellij-community reads:
