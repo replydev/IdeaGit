@@ -100,8 +100,14 @@ impl GitHandler {
         }
     }
 
+    /// Silent commands are not logged to the Git console. Like upstream `setSilent`, making a
+    /// handler silent also suppresses both stdout and stderr copying.
     pub fn set_silent(&mut self, silent: bool) {
         self.silent = silent;
+        if silent {
+            self.stdout_suppressed = true;
+            self.stderr_suppressed = true;
+        }
     }
     pub fn is_silent(&self) -> bool {
         self.silent
@@ -126,6 +132,11 @@ impl GitHandler {
         } else {
             self.custom_env.push((name.to_string(), value.to_string()));
         }
+    }
+
+    /// Upstream `containsCustomEnvironmentVariable`.
+    pub fn contains_custom_environment_variable(&self, name: &str) -> bool {
+        self.custom_env.iter().any(|(k, _)| k == name)
     }
 
     /// The environment applied on top of the inherited process environment, in application order
@@ -241,6 +252,17 @@ mod tests {
         );
         assert!(env.contains(&("GIT_OPTIONAL_LOCKS".into(), "0".into())));
         assert!(env.contains(&(IJ_HANDLER_MARKER_ENV.into(), "true".into())));
+    }
+
+    #[test]
+    fn set_silent_suppresses_output_and_custom_env_lookup() {
+        let mut h = GitHandler::new("/repo", "git", GitCommand::COMMIT);
+        assert!(!h.is_stderr_suppressed());
+        h.set_silent(true);
+        assert!(h.is_silent() && h.is_stdout_suppressed() && h.is_stderr_suppressed());
+        assert!(!h.contains_custom_environment_variable("GIT_EDITOR"));
+        h.add_custom_environment_variable("GIT_EDITOR", "true");
+        assert!(h.contains_custom_environment_variable("GIT_EDITOR"));
     }
 
     #[test]
