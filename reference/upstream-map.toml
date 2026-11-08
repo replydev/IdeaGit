@@ -302,6 +302,7 @@ tests = [
 deviations = [
   "BTreeSet instead of HashSet (deterministic order)",
   "BoundedCache instead of SLRUMap",
+  "Upstream limitation kept: an edge spanning more than about 2 * walk_size rows is not reported for rows far from both of its ends; get_edges_in_row is not an exact edge index",
 ]
 
 [modules."ig-log::print::elements"]

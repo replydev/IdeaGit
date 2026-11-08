@@ -5,6 +5,17 @@
 //! Rows are grouped in blocks of 40; the edges at block boundaries are computed by walking up to
 //! `walk_size` rows and cached. Deviations: sets are `BTreeSet`s (deterministic iteration; upstream
 //! `HashSet` order depends on identity hash codes), and the cache is a [`BoundedCache`].
+//!
+//! **Upstream limitation:** an edge spanning more than about `2 * walk_size` rows is not reported
+//! for rows far from both of its ends. Rendering is unaffected because the middles of long edges
+//! are hidden, but callers should not use [`EdgesInRowGenerator::get_edges_in_row`] as an exact
+//! edge index.
+//!
+//! **Caching:** block results are cached FIFO by insertion age (not LRU). Callers must call
+//! [`EdgesInRowGenerator::invalidate`] after the graph changes; Plan 2b's mutating controllers
+//! must clear this cache and the print element generator's row cache together.
+//!
+//! **Thread safety:** `Send` but not `Sync` (the caches live in `RefCell`s).
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
