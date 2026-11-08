@@ -6,6 +6,7 @@ pub mod console;
 pub mod error;
 pub mod handler;
 pub mod hash;
+pub mod repo_files;
 pub mod runner;
 pub mod status;
 pub mod version;
