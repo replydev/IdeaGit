@@ -2,3 +2,4 @@
 //! See `reference/upstream-map.toml` for the upstream files each module is ported from.
 
 pub mod error;
+pub mod hash;
