@@ -19,10 +19,13 @@
 //!   join (full reload); a first block or full log failing it gives an error data pack.
 //! - `LogData.users` is discarded; upstream's `storeData`/`onAllDataLoaded` (user registry, commit
 //!   index feed) are not ported - only recent details via `set_recent_details_consumer`.
+//! - `initialize` is idempotent (upstream starts a lazy job, so a second call is a no-op), and
+//!   `refresh` before `initialize` runs `initialize` (upstream starts the job, whose initial load
+//!   already reflects the latest state and absorbs the queued request).
 //! - Roots are processed in path order (upstream: `HashMap` order), so multi-repository joins are
 //!   deterministic.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 
 use crate::data::commit::VcsCommitMetadata;
@@ -71,6 +74,7 @@ pub struct VcsLogRefresher {
     current_data_pack: Arc<VcsLogGraphData>,
     data_pack_handler: Option<DataPackHandler>,
     recent_details_consumer: Option<RecentDetailsConsumer>,
+    initialized: bool,
 }
 
 impl VcsLogRefresher {
@@ -88,6 +92,7 @@ impl VcsLogRefresher {
             recent_commit_count,
             data_pack_handler: None,
             recent_details_consumer: None,
+            initialized: false,
         }
     }
 
@@ -131,7 +136,14 @@ impl VcsLogRefresher {
 
     /// `initialize`: publishes the first block, then loads and publishes the full log, which is
     /// returned.
+    ///
+    /// Idempotent: once called, further calls publish nothing and return the current data pack
+    /// (upstream's job is started once).
     pub fn initialize(&mut self) -> Arc<VcsLogGraphData> {
+        if self.initialized {
+            return self.current_data_pack.clone();
+        }
+        self.initialized = true;
         let first = self
             .load_first_block()
             .unwrap_or_else(|e| VcsLogGraphData::error(self.storage.clone(), e));
@@ -144,12 +156,26 @@ impl VcsLogRefresher {
     /// or loads the full log if it is not loaded yet or can't be joined. Publishes and returns the
     /// new data pack (the current one when `roots` is empty).
     ///
+    /// Before [`initialize`](Self::initialize) this initializes instead and returns its result
+    /// (upstream starts the job, and its initial load already reflects the latest state).
+    ///
     /// A root with no provider makes the refresh publish an error data pack, matching upstream's
     /// `requireNotNull`; callers must pass only known roots.
     pub fn refresh(&mut self, roots: &[VcsRoot]) -> Arc<VcsLogGraphData> {
         if roots.is_empty() {
             return self.current_data_pack.clone();
         }
+        if !self.initialized {
+            return self.initialize();
+        }
+        // upstream: `rootsToRefresh.toSet()`
+        let roots: Vec<VcsRoot> = roots
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let roots = roots.as_slice();
         let current = self.current_data_pack.clone();
         let result = (|| {
             let partially_loaded_log = if current.is_full() {

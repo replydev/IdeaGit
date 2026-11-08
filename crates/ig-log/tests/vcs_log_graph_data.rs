@@ -8,8 +8,9 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
-use common::test_vcs_log_provider::TestVcsLogProvider;
+use common::test_vcs_log_provider::{ByName, MockRefManager, TestVcsLogProvider};
 use common::timed_commit_parser::log;
+use ig_log::api::GraphLayout;
 use ig_log::api::permanent::PermanentCommitsInfo;
 use ig_log::data::graph_color_manager_impl::{DEFAULT_COLOR, java_string_hash_code};
 use ig_log::data::graph_data::build_data;
@@ -24,21 +25,6 @@ use ig_log::{GraphCommitImpl, PermanentGraph};
 
 const BRANCH: VcsRefType = VcsRefType::new("BRANCH", true);
 const TAG: VcsRefType = VcsRefType::new("TAG", false);
-
-/// Orders refs by name.
-struct ByName;
-
-impl VcsLogRefManager for ByName {
-    fn branch_layout_compare(&self, a: &VcsRef, b: &VcsRef) -> Ordering {
-        a.name().cmp(b.name())
-    }
-    fn labels_order_compare(&self, a: &VcsRef, b: &VcsRef) -> Ordering {
-        a.name().cmp(b.name())
-    }
-    fn name(&self) -> String {
-        "ByName".into()
-    }
-}
 
 #[test]
 fn heads_are_ordered_by_their_best_ref_and_colored_by_its_name() {
@@ -184,4 +170,122 @@ fn node_ids_are_indexed_including_duplicates_and_not_loaded_commits() {
         !info.contains_all(&["a".to_string()]),
         "not-loaded commits are not contained"
     );
+}
+
+/// The refresher builds the pack with the providers' ref managers: `ByName` decides the head
+/// order of the permanent graph, the ref chosen for a head and so the branch colors.
+#[test]
+fn refresher_wires_ref_managers_into_the_data_pack() {
+    let root = vcs_root("/r");
+    let provider = Arc::new(TestVcsLogProvider::with_ref_manager(Arc::new(ByName)));
+    // heads b2 (row 0, refs "zoo" and "yak") and c2 (row 1, ref "alpha")
+    provider.append_history(log(&["5|-b2|-a1", "4|-c2|-a1", "1|-a1|-"]));
+    for (hash, name) in [("b2", "zoo"), ("b2", "yak"), ("c2", "alpha")] {
+        provider.add_ref(VcsRef::new(Hash::build(hash), name, BRANCH, root.clone()));
+    }
+    let storage: Arc<dyn VcsLogStorage> = Arc::new(InMemoryStorage::new());
+    let mut providers = LogProviders::new();
+    providers.insert(root.clone(), provider as Arc<dyn VcsLogProvider>);
+    let mut refresher = VcsLogRefresher::new(storage.clone(), providers, 10);
+    let pack = refresher.initialize();
+
+    let index = |h: &str| storage.get_commit_index(&Hash::build(h), &root);
+    let refs_model = pack.refs_model();
+    assert_eq!(
+        refs_model
+            .get_ref_for_head_commit(index("b2"))
+            .unwrap()
+            .name(),
+        "yak"
+    );
+    assert_eq!(
+        refs_model
+            .get_ref_for_head_commit(index("c2"))
+            .unwrap()
+            .name(),
+        "alpha"
+    );
+    let colors = ig_log::data::GraphColorManagerImpl::new(refs_model.clone());
+    assert_eq!(
+        colors.get_color(&index("b2"), 1, 1),
+        java_string_hash_code("yak")
+    );
+
+    // head order in the permanent graph: "alpha" (c2, row 1) before "yak" (b2, row 0)
+    let graph = pack.permanent_graph().unwrap();
+    let info = graph.permanent_commits_info_impl();
+    let heads: Vec<_> = graph
+        .permanent_graph_layout_impl()
+        .get_head_node_index()
+        .iter()
+        .map(|&node| info.get_commit_id(node))
+        .collect();
+    assert_eq!(heads, [index("c2"), index("b2")]);
+}
+
+#[test]
+fn heads_without_refs_are_ordered_by_index() {
+    let root = vcs_root("/r");
+    let storage: Arc<dyn VcsLogStorage> = Arc::new(InMemoryStorage::new());
+    let index = |h: &str| storage.get_commit_index(&Hash::build(h), &root);
+    let (x, y) = (index("1"), index("2"));
+    let refs = BTreeMap::from([(
+        root.clone(),
+        Arc::new(RootRefsModel::create([], storage.as_ref())),
+    )]);
+    let managers = BTreeMap::from([(root, Arc::new(MockRefManager) as Arc<dyn VcsLogRefManager>)]);
+    let model = Arc::new(ig_log::data::RefsModel::create(
+        refs,
+        storage.clone(),
+        managers.clone(),
+    ));
+    let comparator = HeadCommitsComparator::new(model, managers);
+    assert_eq!(comparator.compare(&x, &y), x.cmp(&y));
+    assert_eq!(comparator.compare(&y, &x), y.cmp(&x));
+    assert_eq!(comparator.compare(&x, &x), Ordering::Equal);
+}
+
+/// Refs of different managers are ordered by the managers' `name()`, whatever the indexes.
+#[test]
+fn refs_from_different_managers_are_ordered_by_manager_name() {
+    let r1 = vcs_root("/r1");
+    let r2 = vcs_root("/r2");
+    let storage: Arc<dyn VcsLogStorage> = Arc::new(InMemoryStorage::new());
+    let (h1, h2) = (
+        storage.get_commit_index(&Hash::build("a"), &r1),
+        storage.get_commit_index(&Hash::build("b"), &r2),
+    );
+    let model_of = |hash: &str, root: &ig_log::data::VcsRoot| {
+        Arc::new(RootRefsModel::create(
+            [VcsRef::new(Hash::build(hash), "m", BRANCH, root.clone())],
+            storage.as_ref(),
+        ))
+    };
+    let refs = BTreeMap::from([
+        (r1.clone(), model_of("a", &r1)),
+        (r2.clone(), model_of("b", &r2)),
+    ]);
+    // "ByName" < "MockRefManager"
+    let managers = |first: Arc<dyn VcsLogRefManager>, second: Arc<dyn VcsLogRefManager>| {
+        BTreeMap::from([(r1.clone(), first), (r2.clone(), second)])
+    };
+    for (m, expected) in [
+        (
+            managers(Arc::new(ByName), Arc::new(MockRefManager)),
+            Ordering::Less,
+        ),
+        (
+            managers(Arc::new(MockRefManager), Arc::new(ByName)),
+            Ordering::Greater,
+        ),
+    ] {
+        let model = Arc::new(ig_log::data::RefsModel::create(
+            refs.clone(),
+            storage.clone(),
+            m.clone(),
+        ));
+        let comparator = HeadCommitsComparator::new(model, m);
+        assert_eq!(comparator.compare(&h1, &h2), expected);
+        assert_eq!(comparator.compare(&h2, &h1), expected.reverse());
+    }
 }

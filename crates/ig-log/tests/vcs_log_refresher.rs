@@ -2,8 +2,10 @@
 //!
 //! The refresher is synchronous: data packs are published in order on the calling thread, so the
 //! upstream cases about blocking, cancellation and batching of queued requests
-//! (`test_first_refresh_waits_for_full_log`, `test_reinitialize_makes_refresh_cancelled`,
+//! (`test_first_refresh_waits_for_full_log`,
 //! `test_two_immediately_consecutive_refreshes_causes_only_one_data_pack_update`) don't apply.
+//! The part of `test_reinitialize_makes_refresh_cancelled` that applies (initializing twice
+//! publishes nothing more) is covered in `vcs_log_refresher_extra.rs`.
 
 mod common;
 
@@ -107,6 +109,7 @@ fn test_initialize_shows_short_history() {
     let result = f.next_data_pack(0);
     f.assert_data_pack(&log(&f.commits[..RECENT_COMMITS_COUNT]), &result);
     assert!(!result.is_full());
+    assert_eq!(f.published_count(), 2);
 }
 
 #[test]
@@ -129,6 +132,7 @@ fn test_refresh_captures_new_commits() {
 
     let new_commit = "4|-a3|-a2";
     f.log_provider.append_history(log(&[new_commit]));
+    f.log_provider.reset_read_first_block_counter();
     let root = f.project_root.clone();
     f.loader.refresh(&[root]);
     let result = f.next_data_pack(2);
@@ -136,6 +140,8 @@ fn test_refresh_captures_new_commits() {
     let mut all_commits = vec![new_commit];
     all_commits.extend(f.commits.iter().copied());
     f.assert_data_pack(&log(&all_commits), &result);
+    assert_eq!(f.published_count(), 3);
+    assert_eq!(f.log_provider.get_read_first_block_counter(), 1);
 }
 
 #[test]
@@ -170,4 +176,5 @@ fn refresh_edge_cases() {
     let reloaded = f.loader.refresh(&[root]);
     f.assert_data_pack(&log(&f.commits), &reloaded);
     assert!(reloaded.is_full());
+    assert_eq!(f.published_count(), 4);
 }
