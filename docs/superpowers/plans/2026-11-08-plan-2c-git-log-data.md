@@ -116,6 +116,10 @@ There is also an `#[ignore]`d performance smoke test on a synthetic repository o
   - Non-UTF-8 tag names can't be passed back to `git log`, so skip that one tag instead of failing the first block.
   - The current-user cache never expires. Invalidate it on config changes, and stop holding its mutex while running `git config`.
   - The ref comparators and current branch read cached state between refreshes, so the watcher must call `update()`.
+- **From the Task 12 end-to-end review (important for the Log UI):**
+  - A fetch that brings many new tags makes a refresh slow. The provider runs one `git log --decorate` per new unmatched tag, as upstream does (`foreachChunk(..., 1)`). Measured: about 13 ms per tag with packed refs and about 64 ms with loose refs, so 300 tags took 19 s.
+  - Options: past a threshold of new tags (about 20 to 50), fall back to a full reload (about 200 ms for 50k commits), or batch the tag walks. Decide this in the Log UI plan and record it as a deviation.
+  - Measured scaling: 200k commits initialize in about 1 s (RSS about 200 MB). Wide graphs (20 to 200 lanes) are no slower.
 - **Refs in the first block:** the initial first block only carries refs on its own commits, as upstream. The full log brings all refs.
 
 ## Why some tests follow their code
