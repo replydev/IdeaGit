@@ -130,6 +130,10 @@ impl GitHandler {
     }
 
     /// Bytes written to the command's stdin, which is then closed (upstream `setInputProcessor`).
+    ///
+    /// The input is buffered fully, whereas upstream streams it through a
+    /// `ThrowableConsumer<OutputStream>`. Stdin is written on its own thread, so large input
+    /// can't deadlock against full output pipes.
     pub fn set_input(&mut self, input: Vec<u8>) {
         self.input = Some(input);
     }

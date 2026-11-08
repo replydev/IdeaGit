@@ -160,7 +160,9 @@ fn map_unit<I: Iterator<Item = char>>(c: u16, f: impl Fn(char) -> I) -> u16 {
         Some(ch) => {
             let mut mapped = f(ch);
             match (mapped.next(), mapped.next()) {
-                // Java maps one char to one char; multi-char mappings keep the original
+                // Java maps one char to one char; multi-unit mappings keep the original unit, so
+                // e.g. U+0130 (İ) differs from Java. Unicode versions also differ between Java
+                // and Rust. Both are negligible for ref names.
                 (Some(m), None) if (m as u32) <= 0xFFFF => m as u16,
                 _ => c,
             }
@@ -203,5 +205,152 @@ mod tests {
         assert_eq!(natural_compare("feature", "release"), Less);
         assert_eq!(natural_compare("origin/aaa", "origin/feature"), Less);
         assert_eq!(natural_compare("a", "ab"), Less);
+    }
+
+    // Expected values below are derived by hand from upstream `NaturalComparator.java`.
+
+    #[test]
+    fn leading_zeros_and_spaces() {
+        // a01 vs a001: equal digit count and value; full lengths 2 vs 3 -> negative
+        assert_eq!(natural_compare("a01", "a001"), Less);
+        assert_eq!(natural_compare("a001", "a01"), Greater);
+        // a 1 vs a1: equal value; full lengths (space included) 2 vs 1 -> positive
+        assert_eq!(natural_compare("a 1", "a1"), Greater);
+        assert_eq!(natural_compare("a1", "a 1"), Less);
+    }
+
+    #[test]
+    fn number_at_end_vs_longer_string() {
+        // equal through the number, then s2 has more characters -> negative
+        assert_eq!(natural_compare("a1", "a1b"), Less);
+        assert_eq!(natural_compare("a1b", "a1"), Greater);
+        // "10" is a longer digit run than "1" -> positive, regardless of the trailing 'b'
+        assert_eq!(natural_compare("a10", "a1b"), Greater);
+        assert_eq!(natural_compare("a9", "a10b"), Less);
+    }
+
+    #[test]
+    fn dash_underscore_rule() {
+        let cmp = |a, b| natural_compare_with(a, b, true, true).signum();
+        // '-' vs '_' compares '-'(45) with '_'(95)
+        assert_eq!(cmp("a-b", "a_b"), -1);
+        assert_eq!(cmp("a_b", "a-b"), 1);
+        // '-' vs any other char is compared as '_': '_'(95) > '0'(48) and > '+'(43)
+        assert_eq!(cmp("a-b", "a0b"), 1);
+        assert_eq!(cmp("a-b", "a+b"), 1);
+        assert_eq!(cmp("a0b", "a-b"), -1);
+        // '_' (95) vs 'a' ignoring case: upper 95 vs 65 differ, lower 95 - 97 -> negative
+        assert_eq!(cmp("a-b", "aab"), -1);
+        // without likeFileNames '-'(45) is compared as itself: 45 - 48 < 0
+        assert_eq!(natural_compare_with("a-b", "a0b", true, false).signum(), -1);
+    }
+
+    #[test]
+    fn non_ascii_and_surrogate_pairs() {
+        // U+00E9 vs 'f': upper 0xC9 vs 0x46 differ; lower 0xE9 - 0x66 > 0
+        assert_eq!(natural_compare("\u{e9}", "f"), Greater);
+        // equal ignoring case; tie-break: 0xE9 - 0xC9 > 0
+        assert_eq!(natural_compare("\u{e9}", "\u{c9}"), Greater);
+        // U+1F600 = D83D DE00, U+1F601 = D83D DE01: first units equal, then DE00 < DE01
+        assert_eq!(natural_compare("\u{1F600}", "\u{1F601}"), Less);
+        // UTF-16 order, not code point order: D83D < FF21 although U+1F600 > U+FF21
+        assert_eq!(natural_compare("\u{1F600}", "\u{FF21}"), Less);
+        assert_eq!(natural_compare("\u{FF21}", "\u{1F600}"), Greater);
+        // prefix: remaining units in s2 -> negative
+        assert_eq!(natural_compare("\u{1F600}", "\u{1F600}a"), Less);
+        assert_eq!(natural_compare("\u{1F600}a1", "\u{1F600}a1"), Equal);
+    }
+
+    #[test]
+    fn final_case_sensitive_tie_break() {
+        // equal ignoring case; first differing unit 'A'(65) - 'a'(97) < 0
+        assert_eq!(natural_compare("Abc", "abc"), Less);
+        assert_eq!(natural_compare("abc", "Abc"), Greater);
+        assert_eq!(natural_compare("a1B", "a1b"), Less);
+        // 'a' - 'A' > 0 at the first differing unit
+        assert_eq!(natural_compare("aB1", "Ab1"), Greater);
+        // the case-insensitive pass decides first: b vs C -> negative
+        assert_eq!(natural_compare("Ab", "aC"), Less);
+        // the case-sensitive pass is part of the natural compare, not of the *_with(false)
+        assert_eq!(
+            natural_compare_with("Abc", "abc", false, false).signum(),
+            -1
+        );
+        assert_eq!(natural_compare_with("abc", "ABC", true, false).signum(), 1);
+    }
+
+    #[test]
+    fn antisymmetry() {
+        let samples = [
+            "",
+            " ",
+            "  ",
+            "#",
+            "a",
+            "A",
+            "a b",
+            "a#b",
+            "a0b",
+            "a 1",
+            "a1",
+            "a01",
+            "a001",
+            "a10",
+            "a1b",
+            "a-b",
+            "a_b",
+            "a+b",
+            "aab",
+            "file2",
+            "file10",
+            "File10",
+            "v1.9",
+            "v1.10",
+            "origin/main",
+            "origin/Main",
+            "\u{e9}",
+            "\u{c9}",
+            "\u{1F600}",
+            "\u{1F601}",
+            "\u{FF21}",
+            "0",
+            "00",
+            " 0",
+            "0 ",
+            "1 ",
+            " 1",
+        ];
+        for a in samples {
+            for b in samples {
+                assert_eq!(
+                    natural_compare(a, b),
+                    natural_compare(b, a).reverse(),
+                    "{a:?} vs {b:?}"
+                );
+                for (ic, lf) in [(true, true), (true, false), (false, true), (false, false)] {
+                    assert_eq!(
+                        natural_compare_with(a, b, ic, lf).signum(),
+                        -natural_compare_with(b, a, ic, lf).signum(),
+                        "{a:?} vs {b:?} ic={ic} lf={lf}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn hash_space_transitivity_fix() {
+        // ' ' vs '#': the fix makes ' ' greater than chars in (' ', '0'); raw ' ' - '#' would be < 0
+        assert_eq!(natural_compare("a b", "a#b"), Greater);
+        assert_eq!(natural_compare("a#b", "a b"), Less);
+        // ' ' vs '0' goes through the number branch: equal numbers, leading ' ' (32) < '0' (48)
+        assert_eq!(natural_compare("a b", "a0b"), Less);
+        // '#' (35) < '0' (48) as plain chars
+        assert_eq!(natural_compare("a#b", "a0b"), Less);
+        // so the chain is transitive: '#' < ' ' < '0'
+        let (x, y, z) = ("a#b", "a b", "a0b");
+        assert_eq!(natural_compare(x, y), Less);
+        assert_eq!(natural_compare(y, z), Less);
+        assert_eq!(natural_compare(x, z), Less);
     }
 }

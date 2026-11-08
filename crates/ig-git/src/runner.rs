@@ -119,6 +119,9 @@ fn exit_code_of(status: std::process::ExitStatus) -> i32 {
     status.code().unwrap_or(-1)
 }
 
+/// Maximum number of output lines buffered between the reader threads and the calling thread.
+const OUTPUT_CHANNEL_BOUND: usize = 1024;
+
 /// Receives each output line with its kind (upstream `GitLineHandlerListener.onLineAvailable`).
 pub type LineListener<'a> = dyn FnMut(&str, OutputKind) + 'a;
 
@@ -213,6 +216,9 @@ impl Git {
     /// Upstream `runCommandWithoutCollectingOutput`: every stdout and stderr line goes to
     /// `listener` as it arrives (upstream `GitLineHandlerListener.onLineAvailable`); only stderr is
     /// collected in the result.
+    ///
+    /// The listener runs on the calling thread, possibly while the per-project write lock is
+    /// held. It must not run write commands on the same [`Git`]: the lock is not reentrant.
     pub fn run_command_without_collecting_output(
         &self,
         handler: GitHandler,
@@ -284,15 +290,36 @@ impl Git {
         let in_thread = match (child.stdin.take(), handler.input()) {
             (Some(mut stdin), Some(input)) => {
                 let input = input.to_vec();
-                Some(thread::spawn(move || {
-                    use std::io::Write;
-                    let _ = stdin.write_all(&input);
-                }))
+                let spawned = thread::Builder::new()
+                    .name("ig-git-stdin-writer".into())
+                    .spawn(move || {
+                        use std::io::Write;
+                        let _ = stdin.write_all(&input);
+                    });
+                match spawned {
+                    Ok(handle) => Some(handle),
+                    Err(e) => {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        if log_to_console {
+                            self.console
+                                .event(ConsoleEvent::Finished { id, exit_code: -1 });
+                        }
+                        return GitCommandResult {
+                            start_failed: true,
+                            exit_code: -1,
+                            output: Vec::new(),
+                            error_output: vec![format!("Failed to start Git process: {e}")],
+                        };
+                    }
+                }
             }
             _ => None,
         };
 
-        let (tx, rx) = mpsc::channel::<(OutputKind, String)>();
+        // Bounded for backpressure. The consumer is this (calling) thread and the readers only send,
+        // so a full channel just pauses the readers; it cannot deadlock.
+        let (tx, rx) = mpsc::sync_channel::<(OutputKind, String)>(OUTPUT_CHANNEL_BOUND);
         let stdout = child.stdout.take().expect("stdout is piped");
         let stderr = child.stderr.take().expect("stderr is piped");
         let out_thread = spawn_reader(stdout, OutputKind::Stdout, tx.clone());
@@ -300,6 +327,7 @@ impl Git {
 
         let mut output = Vec::new();
         let mut error_output = Vec::new();
+        let mut panic_payload: Option<Box<dyn std::any::Any + Send>> = None;
         for (kind, line) in rx {
             if log_to_console && should_log_line(handler, kind, &line) {
                 self.console.event(ConsoleEvent::Output {
@@ -308,8 +336,14 @@ impl Git {
                     line: line.clone(),
                 });
             }
-            if let Some(listener) = listener.as_mut() {
-                listener(&line, kind);
+            if panic_payload.is_none()
+                && let Some(listener) = listener.as_mut()
+                && let Err(payload) =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| listener(&line, kind)))
+            {
+                // Stop calling the listener but keep draining, so the readers finish and the
+                // child is reaped; the panic is resumed after cleanup.
+                panic_payload = Some(payload);
             }
             match kind {
                 OutputKind::Stdout => {
@@ -335,6 +369,9 @@ impl Git {
         };
         if log_to_console {
             self.console.event(ConsoleEvent::Finished { id, exit_code });
+        }
+        if let Some(payload) = panic_payload {
+            std::panic::resume_unwind(payload);
         }
         GitCommandResult {
             start_failed: false,
@@ -449,7 +486,7 @@ impl LineSplitter {
 fn spawn_reader<R: Read + Send + 'static>(
     mut reader: R,
     kind: OutputKind,
-    tx: mpsc::Sender<(OutputKind, String)>,
+    tx: mpsc::SyncSender<(OutputKind, String)>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut splitter = LineSplitter::default();

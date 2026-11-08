@@ -309,6 +309,24 @@ mod tests {
     }
 
     #[test]
+    fn raw_body_and_no_walk_unsorted_thresholds() {
+        use GitVersionSpecialty::{NoWalkUnsorted, StartedUsingRawBodyInFormat};
+        let raw = StartedUsingRawBodyInFormat;
+        assert!(!raw.exists_in(&GitVersion::new(1, 7, 1, 9)));
+        assert!(!raw.exists_in(&GitVersion::new(1, 6, 9, 9)));
+        assert!(raw.exists_in(&GitVersion::new(1, 7, 2, 0)));
+        assert!(raw.exists_in(&GitVersion::new(1, 7, 2, 1)));
+        assert!(!raw.exists_in(&GitVersion::NULL));
+
+        let nw = NoWalkUnsorted;
+        assert!(!nw.exists_in(&GitVersion::new(1, 7, 12, 0)));
+        assert!(!nw.exists_in(&GitVersion::new(1, 7, 11, 9)));
+        assert!(nw.exists_in(&GitVersion::new(1, 7, 12, 1)));
+        assert!(nw.exists_in(&GitVersion::new(1, 7, 13, 0)));
+        assert!(!nw.exists_in(&GitVersion::NULL));
+    }
+
+    #[test]
     fn presentation() {
         assert_eq!(GitVersion::new(2, 39, 1, 0).presentation(), "2.39.1");
         assert_eq!(GitVersion::new(1, 7, 3, 3).presentation(), "1.7.3.3");
