@@ -11,6 +11,7 @@ pub mod hash;
 pub mod reader;
 pub mod refs;
 pub mod repo_files;
+pub mod roots;
 pub mod runner;
 pub mod status;
 pub mod version;
