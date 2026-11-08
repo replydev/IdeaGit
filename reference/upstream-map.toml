@@ -88,7 +88,12 @@ deviations = ["Branch names compare case-sensitively (upstream: case-insensitive
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
 upstream = ["plugins/git4idea/backend/src/repo/GitRepositoryReader.kt"]
 tests = ["plugins/git4idea/tests/git4idea/repo/GitRepositoryReaderTest.kt", "plugins/git4idea/testData/repo"]
-deviations = ["Hooks info and shallow detection not yet ported"]
+deviations = [
+  "Hooks info and shallow detection not yet ported",
+  "Reftable: CHERRY_PICK_HEAD/REVERT_HEAD also checked via rev-parse (upstream only checks files)",
+  "Reftable: current branch asked from git whenever no ref is HEAD (upstream only without local branches)",
+  "Sequencer todo read as bytes; current-branch case fix uses Unicode lowercase",
+]
 
 [modules."ig-git::roots"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"

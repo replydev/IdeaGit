@@ -85,3 +85,177 @@ fn reads_linked_worktree() {
     );
     assert!(state.local_branches.keys().any(|b| b.name() == "main"));
 }
+
+fn commit_file(root: &std::path::Path, file: &str, content: &str, msg: &str) {
+    std::fs::write(root.join(file), content).unwrap();
+    git(root, &["add", file]);
+    git(root, &["commit", "-q", "-m", msg]);
+}
+
+/// `init_repo`, then `feat` changes `a.txt` and `main` changes it differently. Ends on `main`.
+fn conflicting_branches(root: &std::path::Path) {
+    init_repo(root);
+    git(root, &["checkout", "-q", "-b", "feat"]);
+    commit_file(root, "a.txt", "feat\n", "feat");
+    git(root, &["checkout", "-q", "main"]);
+    commit_file(root, "a.txt", "main\n", "main");
+}
+
+fn reftable_supported(dir: &std::path::Path) -> bool {
+    git_output(dir, &["init", "-q", "--ref-format=reftable", "-b", "main"])
+        .status
+        .success()
+}
+
+fn assert_failed(out: &std::process::Output, what: &str) {
+    assert!(!out.status.success(), "{what} should conflict");
+}
+
+#[test]
+fn unborn_branch() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    let state = read_state(root);
+    assert_eq!(state.state, RepositoryState::Normal);
+    assert_eq!(
+        state.current_branch.as_ref().map(|b| b.name()),
+        Some("main")
+    );
+    assert_eq!(state.current_revision, None);
+}
+
+fn assert_rebasing(root: &std::path::Path) {
+    let state = read_state(root);
+    assert_eq!(state.state, RepositoryState::Rebasing);
+    assert_eq!(
+        state.current_branch.as_ref().map(|b| b.name()),
+        Some("feat")
+    );
+    assert!(state.current_revision.is_some());
+}
+
+#[test]
+fn rebase_in_progress_reports_rebased_branch() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    conflicting_branches(root);
+    git(root, &["checkout", "-q", "feat"]);
+    assert_failed(&git_output(root, &["rebase", "main"]), "rebase");
+    assert_rebasing(root);
+}
+
+#[test]
+fn apply_rebase_in_progress() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    conflicting_branches(root);
+    git(root, &["checkout", "-q", "feat"]);
+    assert_failed(
+        &git_output(root, &["rebase", "--apply", "main"]),
+        "rebase --apply",
+    );
+    assert_rebasing(root);
+}
+
+#[test]
+fn cherry_pick_conflict_is_grafting() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    conflicting_branches(root);
+    assert_failed(&git_output(root, &["cherry-pick", "feat"]), "cherry-pick");
+    assert_eq!(read_state(root).state, RepositoryState::Grafting);
+}
+
+#[test]
+fn revert_conflict_is_reverting() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    init_repo(root);
+    commit_file(root, "a.txt", "two\n", "c1");
+    let c1 = git(root, &["rev-parse", "HEAD"]).trim().to_string();
+    commit_file(root, "a.txt", "three\n", "c2");
+    assert_failed(&git_output(root, &["revert", "--no-edit", &c1]), "revert");
+    assert_eq!(read_state(root).state, RepositoryState::Reverting);
+}
+
+#[test]
+fn multi_commit_cherry_pick_after_resolving_first_is_grafting() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    init_repo(root);
+    git(root, &["checkout", "-q", "-b", "feat"]);
+    commit_file(root, "a.txt", "feat\n", "f1");
+    commit_file(root, "b.txt", "b\n", "f2");
+    git(root, &["checkout", "-q", "main"]);
+    commit_file(root, "a.txt", "main\n", "main");
+    assert_failed(
+        &git_output(root, &["cherry-pick", "main..feat"]),
+        "cherry-pick main..feat",
+    );
+    std::fs::write(root.join("a.txt"), "resolved\n").unwrap();
+    git(root, &["add", "a.txt"]);
+    git(root, &["commit", "--no-edit", "-q"]);
+    assert!(!root.join(".git/CHERRY_PICK_HEAD").exists());
+    assert_eq!(read_state(root).state, RepositoryState::Grafting);
+}
+
+#[test]
+fn reftable_repository_states() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    if !reftable_supported(root) {
+        eprintln!("skipping: git lacks reftable support");
+        return;
+    }
+    commit_file(root, "a.txt", "one\n", "initial");
+    git(root, &["branch", "other"]);
+    let head = git(root, &["rev-parse", "HEAD"]).trim().to_string();
+
+    let state = read_state(root);
+    assert_eq!(state.state, RepositoryState::Normal);
+    assert_eq!(
+        state.current_branch.as_ref().map(|b| b.name()),
+        Some("main")
+    );
+    assert_eq!(state.current_revision.as_deref(), Some(head.as_str()));
+    let mut names: Vec<String> = state
+        .local_branches
+        .keys()
+        .map(|b| b.name().to_string())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["main", "other"]);
+
+    git(root, &["checkout", "-q", "--detach"]);
+    let state = read_state(root);
+    assert_eq!(state.state, RepositoryState::Detached);
+    assert_eq!(state.current_revision.as_deref(), Some(head.as_str()));
+
+    git(root, &["checkout", "-q", "main"]);
+    git(root, &["checkout", "-q", "--orphan", "newroot"]);
+    let state = read_state(root);
+    assert_eq!(state.state, RepositoryState::Normal);
+    assert_eq!(
+        state.current_branch.as_ref().map(|b| b.name()),
+        Some("newroot")
+    );
+    assert_eq!(state.current_revision, None);
+}
+
+#[test]
+fn reftable_cherry_pick_conflict_is_grafting() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    if !reftable_supported(root) {
+        eprintln!("skipping: git lacks reftable support");
+        return;
+    }
+    commit_file(root, "a.txt", "one\n", "initial");
+    git(root, &["checkout", "-q", "-b", "feat"]);
+    commit_file(root, "a.txt", "feat\n", "feat");
+    git(root, &["checkout", "-q", "main"]);
+    commit_file(root, "a.txt", "main\n", "main");
+    assert_failed(&git_output(root, &["cherry-pick", "feat"]), "cherry-pick");
+    assert_eq!(read_state(root).state, RepositoryState::Grafting);
+}

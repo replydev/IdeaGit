@@ -2,6 +2,10 @@
 //! repository state from `.git` files, with a `git for-each-ref` fallback for reftable repositories).
 //!
 //! Not yet ported: hooks info and shallow detection (needed by the commit/push plans).
+//!
+//! Deviations (upstream bugs on reftable repositories): `CHERRY_PICK_HEAD`/`REVERT_HEAD` are also
+//! checked via `git rev-parse` when the repository uses reftable, and the current branch is asked
+//! from git whenever `for-each-ref` marks no ref as HEAD (orphan branches).
 
 use std::collections::HashMap;
 
@@ -56,12 +60,15 @@ pub struct GitRepositoryReader<'a> {
 }
 
 impl<'a> GitRepositoryReader<'a> {
+    /// For a bare repository pass the repository dir as both root and git dir
+    /// ([`crate::repo_files::find_git_dir`] returns `None` for bare repositories).
     pub fn new(files: &'a GitRepositoryFiles, git: &'a Git) -> Self {
         Self { files, git }
     }
 
     pub fn read_state(&self, remotes: &[GitRemote]) -> GitBranchState {
         let head = self.read_head();
+        let is_reftable = head.is_none();
         let (branches, head_info) = match head {
             // Registry `git.read.branches.from.disk` is on by default upstream.
             Some(head_info) => (self.read_branches(remotes), head_info),
@@ -79,7 +86,8 @@ impl<'a> GitRepositoryReader<'a> {
             }
         };
 
-        let state = self.read_repository_state(matches!(head_info, HeadInfo::Branch(_)));
+        let state =
+            self.read_repository_state(matches!(head_info, HeadInfo::Branch(_)), is_reftable);
         let (current_branch, current_revision) = self.parse_head_state(head_info, state, &branches);
         GitBranchState {
             current_revision,
@@ -113,7 +121,7 @@ impl<'a> GitRepositoryReader<'a> {
         }
     }
 
-    fn read_repository_state(&self, is_on_branch: bool) -> RepositoryState {
+    fn read_repository_state(&self, is_on_branch: bool, is_reftable: bool) -> RepositoryState {
         if self.files.merge_head_file().exists() {
             return RepositoryState::Merging;
         }
@@ -123,10 +131,14 @@ impl<'a> GitRepositoryReader<'a> {
         if !is_on_branch {
             return RepositoryState::Detached;
         }
-        if self.files.cherry_pick_head().exists() {
+        if self.files.cherry_pick_head().exists()
+            || (is_reftable && self.pseudo_ref_exists("CHERRY_PICK_HEAD"))
+        {
             return RepositoryState::Grafting;
         }
-        if self.files.revert_head().exists() {
+        if self.files.revert_head().exists()
+            || (is_reftable && self.pseudo_ref_exists("REVERT_HEAD"))
+        {
             return RepositoryState::Reverting;
         }
         if let Some(state) = self.sequencer_todo_based_state() {
@@ -135,13 +147,22 @@ impl<'a> GitRepositoryReader<'a> {
         RepositoryState::Normal
     }
 
+    /// True if `git rev-parse -q --verify <name>` resolves (pseudo-refs stored in a reftable).
+    fn pseudo_ref_exists(&self, name: &str) -> bool {
+        let mut h = self
+            .git
+            .handler(self.files.root_dir(), GitCommand::REV_PARSE);
+        h.add_parameters(["-q", "--verify", name]);
+        self.git.run_command(h).success()
+    }
+
     /// Upstream `GitSequencerTodoReader`: cherry-pick/revert of several commits can be in progress
     /// with `CHERRY_PICK_HEAD`/`REVERT_HEAD` missing.
     fn sequencer_todo_based_state(&self) -> Option<RepositoryState> {
-        let content = std::fs::read_to_string(self.files.sequencer_todo_file()).ok()?;
-        if content.starts_with("pick") {
+        let content = std::fs::read(self.files.sequencer_todo_file()).ok()?;
+        if content.starts_with(b"pick") {
             Some(RepositoryState::Grafting)
-        } else if content.starts_with("revert") {
+        } else if content.starts_with(b"revert") {
             Some(RepositoryState::Reverting)
         } else {
             None
@@ -232,17 +253,10 @@ impl<'a> GitRepositoryReader<'a> {
         if let Some(head) = head {
             return (branches, head);
         }
-        if branches.local.is_empty() {
-            // fresh repository: no commits yet, but HEAD names a branch
-            if let Some(current) = self.resolve_current_branch() {
-                return (
-                    GitBranches {
-                        local: HashMap::new(),
-                        remote: branches.remote,
-                    },
-                    HeadInfo::Branch(current),
-                );
-            }
+        // HEAD names a branch without commits (fresh repository or orphan branch). Deviation: upstream
+        // asks only when there are no local branches, so an orphan branch reads as detached.
+        if let Some(current) = self.resolve_current_branch() {
+            return (branches, HeadInfo::Branch(current));
         }
         (branches, HeadInfo::Unknown)
     }
@@ -277,7 +291,7 @@ fn fix_current_branch_case(branch: GitLocalBranch, branches: &GitBranches) -> Gi
     branches
         .local
         .keys()
-        .find(|b| b.name().eq_ignore_ascii_case(branch.name()))
+        .find(|b| b.name().to_lowercase() == branch.name().to_lowercase())
         .cloned()
         .unwrap_or(branch)
 }
