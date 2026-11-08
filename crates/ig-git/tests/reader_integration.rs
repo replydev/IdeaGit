@@ -259,3 +259,34 @@ fn reftable_cherry_pick_conflict_is_grafting() {
     assert_failed(&git_output(root, &["cherry-pick", "feat"]), "cherry-pick");
     assert_eq!(read_state(root).state, RepositoryState::Grafting);
 }
+
+#[test]
+fn reftable_revert_conflict_is_reverting() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    if !reftable_supported(root) {
+        eprintln!("skipping: git lacks reftable support");
+        return;
+    }
+    commit_file(root, "a.txt", "one\n", "initial");
+    commit_file(root, "a.txt", "two\n", "c1");
+    let c1 = git(root, &["rev-parse", "HEAD"]).trim().to_string();
+    commit_file(root, "a.txt", "three\n", "c2");
+    assert_failed(&git_output(root, &["revert", "--no-edit", &c1]), "revert");
+    assert!(
+        !root.join(".git/REVERT_HEAD").is_file(),
+        "reftable keeps REVERT_HEAD out of the files backend"
+    );
+    assert_eq!(read_state(root).state, RepositoryState::Reverting);
+}
+
+#[test]
+fn non_utf8_sequencer_todo_is_still_grafting() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    init_repo(root);
+    let dir = root.join(".git/sequencer");
+    std::fs::create_dir(&dir).unwrap();
+    std::fs::write(dir.join("todo"), b"pick 0000000 caf\xe9 subject\n").unwrap();
+    assert_eq!(read_state(root).state, RepositoryState::Grafting);
+}
