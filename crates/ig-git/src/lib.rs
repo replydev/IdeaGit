@@ -1,6 +1,7 @@
 //! Git core for IdeaGit: a port of IntelliJ's `git4idea` command and repository layers.
 //! See `reference/upstream-map.toml` for the upstream files each module is ported from.
 
+pub mod command;
 pub mod error;
 pub mod hash;
 pub mod version;
