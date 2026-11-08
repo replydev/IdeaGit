@@ -183,6 +183,8 @@ pub enum GitVersionSpecialty {
     EnvGitOptionalLocksAllowed,
     StatusSupportsIgnoredModes,
     StatusSupportsNoRenames,
+    StartedUsingRawBodyInFormat,
+    NoWalkUnsorted,
 }
 
 impl GitVersionSpecialty {
@@ -192,6 +194,8 @@ impl GitVersionSpecialty {
             Self::EnvGitOptionalLocksAllowed => GitVersion::new(2, 15, 0, 0),
             Self::StatusSupportsIgnoredModes => GitVersion::new(2, 16, 0, 0),
             Self::StatusSupportsNoRenames => GitVersion::new(2, 18, 0, 0),
+            Self::StartedUsingRawBodyInFormat => GitVersion::new(1, 7, 2, 0),
+            Self::NoWalkUnsorted => GitVersion::new(1, 7, 12, 1),
         }
     }
 

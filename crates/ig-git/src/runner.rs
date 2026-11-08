@@ -119,6 +119,9 @@ fn exit_code_of(status: std::process::ExitStatus) -> i32 {
     status.code().unwrap_or(-1)
 }
 
+/// Receives each output line with its kind (upstream `GitLineHandlerListener.onLineAvailable`).
+pub type LineListener<'a> = dyn FnMut(&str, OutputKind) + 'a;
+
 /// Runs git commands for one project. Holds the per-project command lock (upstream
 /// `GitVcs.getCommandLock`) that serializes write commands.
 pub struct Git {
@@ -180,7 +183,19 @@ impl Git {
 
     /// Creates a handler for this executable.
     pub fn handler(&self, working_dir: &Path, command: GitCommand) -> GitHandler {
-        let mut handler = GitHandler::new(working_dir, &self.executable, command);
+        self.handler_with_config(working_dir, command, &[])
+    }
+
+    /// Creates a handler with extra `-c` config parameters (upstream
+    /// `GitLineHandler(project, root, command, configParameters)`).
+    pub fn handler_with_config(
+        &self,
+        working_dir: &Path,
+        command: GitCommand,
+        config_parameters: &[&str],
+    ) -> GitHandler {
+        let mut handler =
+            GitHandler::with_config(working_dir, &self.executable, command, config_parameters);
         for (k, v) in &self.base_env {
             handler.add_custom_environment_variable(k, v);
         }
@@ -191,7 +206,27 @@ impl Git {
     }
 
     /// Upstream `GitImplBase.doRun`.
-    pub fn run_command(&self, mut handler: GitHandler) -> GitCommandResult {
+    pub fn run_command(&self, handler: GitHandler) -> GitCommandResult {
+        self.run_with(handler, None, true)
+    }
+
+    /// Upstream `runCommandWithoutCollectingOutput`: every stdout and stderr line goes to
+    /// `listener` as it arrives (upstream `GitLineHandlerListener.onLineAvailable`); only stderr is
+    /// collected in the result.
+    pub fn run_command_without_collecting_output(
+        &self,
+        handler: GitHandler,
+        listener: &mut dyn FnMut(&str, OutputKind),
+    ) -> GitCommandResult {
+        self.run_with(handler, Some(listener), false)
+    }
+
+    fn run_with(
+        &self,
+        mut handler: GitHandler,
+        listener: Option<&mut LineListener<'_>>,
+        collect_stdout: bool,
+    ) -> GitCommandResult {
         for (k, v) in trace_environment(&self.version) {
             handler.add_custom_environment_variable(k, v);
         }
@@ -205,15 +240,25 @@ impl Git {
         } else {
             None
         };
-        self.execute(&handler)
+        self.execute(&handler, listener, collect_stdout)
     }
 
-    fn execute(&self, handler: &GitHandler) -> GitCommandResult {
+    fn execute(
+        &self,
+        handler: &GitHandler,
+        mut listener: Option<&mut LineListener<'_>>,
+        collect_stdout: bool,
+    ) -> GitCommandResult {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let log_to_console = !handler.is_silent();
 
         let mut cmd = handler.build_command();
-        cmd.stdin(Stdio::null())
+        let stdin = if handler.input().is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        };
+        cmd.stdin(stdin)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         let mut child = match cmd.spawn() {
@@ -235,6 +280,18 @@ impl Git {
             });
         }
 
+        // Upstream `GitHandlerInputProcessorUtil.writeLines`: the input is written, then stdin closed.
+        let in_thread = match (child.stdin.take(), handler.input()) {
+            (Some(mut stdin), Some(input)) => {
+                let input = input.to_vec();
+                Some(thread::spawn(move || {
+                    use std::io::Write;
+                    let _ = stdin.write_all(&input);
+                }))
+            }
+            _ => None,
+        };
+
         let (tx, rx) = mpsc::channel::<(OutputKind, String)>();
         let stdout = child.stdout.take().expect("stdout is piped");
         let stderr = child.stderr.take().expect("stderr is piped");
@@ -251,8 +308,15 @@ impl Git {
                     line: line.clone(),
                 });
             }
+            if let Some(listener) = listener.as_mut() {
+                listener(&line, kind);
+            }
             match kind {
-                OutputKind::Stdout => output.push(line),
+                OutputKind::Stdout => {
+                    if collect_stdout {
+                        output.push(line);
+                    }
+                }
                 OutputKind::Stderr => {
                     if !looks_like_progress(&line) {
                         error_output.push(line);
@@ -262,6 +326,9 @@ impl Git {
         }
         let _ = out_thread.join();
         let _ = err_thread.join();
+        if let Some(in_thread) = in_thread {
+            let _ = in_thread.join();
+        }
         let exit_code = match child.wait() {
             Ok(status) => exit_code_of(status),
             Err(_) => -1,

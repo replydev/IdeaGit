@@ -31,6 +31,7 @@ pub struct GitHandler {
     silent: bool,
     stdout_suppressed: bool,
     stderr_suppressed: bool,
+    input: Option<Vec<u8>>,
 }
 
 impl GitHandler {
@@ -66,6 +67,7 @@ impl GitHandler {
             silent: command.locking_policy() != LockingPolicy::Write,
             stdout_suppressed: true,
             stderr_suppressed: false,
+            input: None,
         }
     }
 
@@ -125,6 +127,15 @@ impl GitHandler {
     }
     pub fn is_stderr_suppressed(&self) -> bool {
         self.stderr_suppressed
+    }
+
+    /// Bytes written to the command's stdin, which is then closed (upstream `setInputProcessor`).
+    pub fn set_input(&mut self, input: Vec<u8>) {
+        self.input = Some(input);
+    }
+
+    pub fn input(&self) -> Option<&[u8]> {
+        self.input.as_deref()
     }
 
     /// Adds or replaces an environment variable for this command.
