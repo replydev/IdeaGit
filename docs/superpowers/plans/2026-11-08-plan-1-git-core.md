@@ -4168,3 +4168,19 @@ Expected: no fmt diff, no clippy warnings, and every test passing: 34 unit tests
 - Reporting read errors on the output pipes as a failed result, and `*_ignoring(codes)` variants of `output_or_error`/`throw_on_error` (add with the first caller).
 - Test isolation for commands run inside library functions such as `get_file_status`. Integration tests can isolate handlers they build themselves (`common::isolate`). Library-created handlers still inherit the developer's global git config, so Plan 4 (commit) needs a test-only base environment on `Git`.
 - CI: MSRV (1.85) check job and cargo caching (Plan 9).
+
+### Decide before Plan 4 (from the final branch review)
+- Split `Git` into an app-wide `GitExecutable { path, version }` (upstream `GitExecutableManager`) and a per-project runner that holds the write lock and console (upstream `GitVcs.getCommandLock`). Sharing one `Git` across projects would serialize writes globally.
+- Error contract:
+  - give `GitError::Command` the exit code and stderr lines
+  - keep `io::ErrorKind` in file errors
+  - make `GitError: Clone` for GPUI state
+  - drop or use the unused `Io` variant
+  - document the `Result` vs best-effort convention in `lib.rs`
+- API consistency:
+  - `GitBranchState.current_revision: Option<Hash>`
+  - `GitRemoteBranch::name()` returning a borrowed name
+  - `get_file_status` taking `&[impl AsRef<Path>]`
+- Move path helpers (`/`-joined relative paths, `normalize`, `user_home`) into one internal module.
+- CI: set `IG_REQUIRE_REFTABLE=1` so the reftable tests fail instead of silently skipping on an old git.
+- Change model: `-z` output passes through the runner's line splitting and lossy UTF-8 decoding (as upstream), so paths with `\r` or invalid UTF-8 are altered. Consider a raw-bytes output mode.
