@@ -60,6 +60,9 @@ So Task 1 adds the complete crate source, which was verified in a prototype. Eac
   - Drop hovered or selected print elements when the visible graph is replaced, because stale indexes can panic.
 - **UI ergonomics:** `action_controller(&mut self)` requires `&mut` even for read-only queries, as upstream. Wrap it in UI helpers. Consider marking internal modules `#[doc(hidden)]`.
 - **Plan 2c:** guarantee unique commit ids (duplicates are accepted silently, as upstream does), and add the node-id index.
+- **Plan 2c (Task 4 review):**
+  - Feed commits in topological order (`--topo-order`/`--date-order`), or check the order. A parent listed before its child is silently treated as not loaded, as upstream does.
+  - Optimise for 100k+ histories: `SmallVec` for pending up-nodes and adjacent edges, a faster hasher, and pre-sized maps. `contains_all` and `convert_to_node_ids_skipping` are O(n·m)/O(n), alongside `get_node_id`.
 
 ## File structure
 
