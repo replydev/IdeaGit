@@ -110,6 +110,12 @@ There is also an `#[ignore]`d performance smoke test on a synthetic repository o
 - **From the Task 4 joiner review (repository watching):**
   - Force a full reload (not a join) when `.git/shallow`, `.git/info/grafts` or `refs/replace/*` change.
   - Deepening a shallow clone, grafts and `git replace` change a commit's parents under the same hash. A join silently keeps the old parents when that commit lies deeper than the first block. Upstream has the same limitation.
+- **From the Task 7 provider review (all inherited from upstream):**
+  - A commit message containing the `\x02\x02` marker fails the whole `read_metadata` batch. Retry once after a `GitFormatError`.
+  - `log.excludeDecoration` hides refs. Use `--clear-decorations` (git ≥ 2.38, version-gated) or `--decorate-refs=refs/`.
+  - Non-UTF-8 tag names can't be passed back to `git log`, so skip that one tag instead of failing the first block.
+  - The current-user cache never expires. Invalidate it on config changes, and stop holding its mutex while running `git config`.
+  - The ref comparators and current branch read cached state between refreshes, so the watcher must call `update()`.
 - **Refs in the first block:** the initial first block only carries refs on its own commits, as upstream. The full log brings all refs.
 
 ## Why some tests follow their code
