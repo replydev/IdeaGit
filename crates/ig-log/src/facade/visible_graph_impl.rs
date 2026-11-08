@@ -8,6 +8,9 @@
 //!   rebuilds the print element generator (upstream wraps the `Runnable`).
 //! - `BUTTON_COLLAPSE` / `BUTTON_EXPAND` are reported unsupported until `CollapsedController`
 //!   is ported (Plan 2b); upstream supports them on every non-filtered graph.
+//! - Arrow actions on a stale print element (one that does not belong to this graph's current
+//!   `print_elements`, e.g. a hover racing a log refresh) are ignored and fall through to the
+//!   controller's default answer; upstream throws.
 //! - `buildSimpleGraphInfo` (`SimpleGraphInfo`) is not ported yet.
 
 use std::collections::HashSet;
@@ -125,6 +128,16 @@ impl<CommitId: 'static> VisibleGraphImpl<CommitId> {
 
         let edge = edge_print_element.graph_edge();
 
+        // A stale element (from an older visible graph) may refer to nodes this graph does not
+        // have: ignore it (deviation: upstream throws).
+        let nodes_count = self.graph_controller.compiled_graph().nodes_count();
+        let in_range = |index: Option<VcsLogVisibleGraphIndex>| {
+            index.is_none_or(|index| (0..nodes_count).contains(&index))
+        };
+        if !in_range(edge.up_node_index) || !in_range(edge.down_node_index) {
+            return None;
+        }
+
         let mut target_id = None;
         if edge.edge_type == GraphEdgeType::NotLoadCommit {
             debug_assert!(edge_print_element.edge_print_type() == EdgePrintElementType::Down);
@@ -139,14 +152,13 @@ impl<CommitId: 'static> VisibleGraphImpl<CommitId> {
         }
         let target_id = target_id?;
 
-        let commit_to_jump = || {
-            self.permanent_graph
-                .permanent_commits_info()
-                .get_commit_id(target_id)
-        };
+        // a negative id must be a known not-loaded id
+        let commit = self
+            .permanent_graph
+            .permanent_commits_info()
+            .try_get_commit_id(target_id)?;
         match action.action_type {
             GraphActionType::MouseOver => {
-                let commit = commit_to_jump();
                 let selection_changed = self
                     .print_element_generator
                     .presentation_manager_mut()
@@ -160,7 +172,6 @@ impl<CommitId: 'static> VisibleGraphImpl<CommitId> {
                 })
             }
             GraphActionType::MouseClick => {
-                let commit = commit_to_jump();
                 let selection_changed = self
                     .print_element_generator
                     .presentation_manager_mut()

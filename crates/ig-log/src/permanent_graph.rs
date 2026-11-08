@@ -85,7 +85,7 @@ impl<'a, Id> AllCommits<'a, Id> {
     }
 
     /// # Panics
-    /// If `index >= len()`.
+    /// If `index >= len()` (out of range).
     pub fn get(&self, index: usize) -> GraphCommitImpl<Id> {
         assert!(index < self.len, "index {index} out of bounds {}", self.len);
         (self.get)(index)

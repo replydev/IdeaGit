@@ -409,6 +409,7 @@ deviations = [
   "BUTTON_COLLAPSE/BUTTON_EXPAND reported unsupported until CollapsedController (Plan 2b)",
   "buildSimpleGraphInfo / SimpleGraphInfo not ported",
   "Graph updater run via run_graph_updater",
+  "Arrow actions on stale print elements (indices out of range / unknown not-loaded id) are ignored instead of throwing",
 ]
 
 [modules."ig-log::tests::common"]

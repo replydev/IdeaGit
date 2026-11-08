@@ -79,6 +79,8 @@ pub struct GraphAnswer<Id> {
 
 /// Handles user actions on a visible graph.
 pub trait ActionController<Id> {
+    /// The element must come from this visible graph's current `print_elements`; stale elements
+    /// are ignored (deviation: upstream throws).
     fn perform_action(&mut self, graph_action: GraphAction) -> GraphAnswer<Id>;
 
     fn are_long_edges_hidden(&self) -> bool;

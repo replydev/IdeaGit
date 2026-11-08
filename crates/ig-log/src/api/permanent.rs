@@ -17,6 +17,10 @@ pub type VcsLogGraphNodeId = i32;
 pub trait PermanentCommitsInfo<CommitId>: Send + Sync {
     fn get_commit_id(&self, node_id: VcsLogGraphNodeId) -> CommitId;
 
+    /// Non-panicking [`get_commit_id`](Self::get_commit_id): `None` if `node_id` is neither a row
+    /// nor a known not-loaded id.
+    fn try_get_commit_id(&self, node_id: VcsLogGraphNodeId) -> Option<CommitId>;
+
     fn get_timestamp(&self, node_id: VcsLogGraphNodeId) -> i64;
 
     /// See [`PermanentCommitsInfoImpl::get_node_id`](crate::permanent::permanent_commits_info_impl::PermanentCommitsInfoImpl::get_node_id)

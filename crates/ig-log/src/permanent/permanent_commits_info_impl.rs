@@ -152,6 +152,16 @@ impl<CommitId: Clone + Eq + Hash + Send + Sync> PermanentCommitsInfo<CommitId>
         self.rows_mapping.get_commit_id(node_id)
     }
 
+    fn try_get_commit_id(&self, node_id: VcsLogGraphNodeId) -> Option<CommitId> {
+        if node_id < 0 {
+            return self.not_loaded_commits.get(&node_id).cloned();
+        }
+        self.rows_mapping
+            .commit_id_mapping()
+            .get(node_id as usize)
+            .cloned()
+    }
+
     fn get_timestamp(&self, node_id: VcsLogGraphNodeId) -> i64 {
         if node_id < 0 {
             return 0;
