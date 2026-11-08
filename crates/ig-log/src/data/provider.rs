@@ -47,7 +47,7 @@ pub struct RequirementsEx<'a> {
     /// Whether all refs must be reloaded.
     pub refresh_refs: bool,
     /// The refs that were in the log before the refresh.
-    pub previous_refs: &'a dyn VcsRefsContainer,
+    pub previous_refs: &'a (dyn VcsRefsContainer + Sync),
 }
 
 /// `VcsLogProvider.Requirements`: how many recent commits to read, plus refresh information for
@@ -70,7 +70,7 @@ impl<'a> Requirements<'a> {
     pub fn refresh(
         commit_count: usize,
         refresh: bool,
-        previous_refs: &'a dyn VcsRefsContainer,
+        previous_refs: &'a (dyn VcsRefsContainer + Sync),
     ) -> Requirements<'a> {
         Requirements::refresh_with(commit_count, refresh, previous_refs, true)
     }
@@ -79,7 +79,7 @@ impl<'a> Requirements<'a> {
     pub fn refresh_with(
         commit_count: usize,
         refresh: bool,
-        previous_refs: &'a dyn VcsRefsContainer,
+        previous_refs: &'a (dyn VcsRefsContainer + Sync),
         refresh_refs: bool,
     ) -> Requirements<'a> {
         Requirements {

@@ -87,8 +87,16 @@ impl HeadCommitsComparator {
             (Some(_), None) => return Ordering::Less,
             (Some(r1), Some(r2)) => (r1, r2),
         };
-        let manager1 = &self.ref_managers[ref1.root()];
-        let manager2 = &self.ref_managers[ref2.root()];
+        // A ref whose root has no manager is treated like a head without a ref.
+        let (manager1, manager2) = match (
+            self.ref_managers.get(ref1.root()),
+            self.ref_managers.get(ref2.root()),
+        ) {
+            (None, None) => return head1.cmp(head2),
+            (None, Some(_)) => return Ordering::Greater,
+            (Some(_), None) => return Ordering::Less,
+            (Some(m1), Some(m2)) => (m1, m2),
+        };
         if !Arc::ptr_eq(manager1, manager2) {
             return manager1.name().cmp(&manager2.name());
         }

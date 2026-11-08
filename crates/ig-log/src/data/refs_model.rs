@@ -126,12 +126,16 @@ impl RefsModel {
 
     /// `getRefForHeadCommit`: the most important reference of a branch head, by the root's
     /// branch layout comparator.
+    ///
+    /// No lock is held while calling storage or ref managers (a racing thread may compute the same
+    /// value twice).
     pub fn get_ref_for_head_commit(&self, head_index: VcsLogCommitStorageIndex) -> Option<VcsRef> {
-        let mut cache = self
+        if let Some(cached) = self
             .best_ref_for_head
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        if let Some(cached) = cache.get(&head_index) {
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&head_index)
+        {
             return cached.clone();
         }
         let best = self.storage.get_commit_id(head_index).and_then(|id| {
@@ -147,11 +151,18 @@ impl RefsModel {
                     }
                 })
         });
-        cache.insert(head_index, best.clone());
-        best
+        self.best_ref_for_head
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entry(head_index)
+            .or_insert(best)
+            .clone()
     }
 
     /// `getRootForHeadCommit`.
+    ///
+    /// No lock is held while calling storage or ref managers (a racing thread may compute the same
+    /// value twice).
     pub fn get_root_for_head_commit(
         &self,
         head_index: VcsLogCommitStorageIndex,
@@ -159,10 +170,20 @@ impl RefsModel {
         if let Some(root) = &self.single_root {
             return Some(root.clone());
         }
-        let mut cache = self.root_for_head.lock().unwrap_or_else(|e| e.into_inner());
-        cache
+        if let Some(cached) = self
+            .root_for_head
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&head_index)
+        {
+            return cached.clone();
+        }
+        let root = self.storage.get_commit_id(head_index).map(|id| id.root);
+        self.root_for_head
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .entry(head_index)
-            .or_insert_with(|| self.storage.get_commit_id(head_index).map(|id| id.root))
+            .or_insert(root)
             .clone()
     }
 

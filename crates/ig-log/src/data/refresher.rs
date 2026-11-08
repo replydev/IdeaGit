@@ -17,6 +17,8 @@
 //!   parent that is in the list must come after its child (upstream builds the graph silently,
 //!   treating such parents as not loaded). A joined log failing the check is treated like a failed
 //!   join (full reload); a first block or full log failing it gives an error data pack.
+//! - `LogData.users` is discarded; upstream's `storeData`/`onAllDataLoaded` (user registry, commit
+//!   index feed) are not ported - only recent details via `set_recent_details_consumer`.
 //! - Roots are processed in path order (upstream: `HashMap` order), so multi-repository joins are
 //!   deterministic.
 
@@ -89,7 +91,11 @@ impl VcsLogRefresher {
         }
     }
 
-    /// Called with every new data pack (upstream `dataPackUpdateHandler`), on the refreshing thread.
+    /// Called with every new data pack (upstream `dataPackUpdateHandler`).
+    ///
+    /// Runs on the refreshing thread. It must not call back into this refresher (e.g. through a
+    /// shared `Mutex`): forward the pack (e.g. over a channel) instead. Calling into storage or the
+    /// refs model is safe.
     pub fn set_data_pack_handler(
         &mut self,
         handler: impl FnMut(&Arc<VcsLogGraphData>) + Send + 'static,
@@ -137,6 +143,9 @@ impl VcsLogRefresher {
     /// `refresh` (one request): rereads the recent commits of `roots` and joins them to the log,
     /// or loads the full log if it is not loaded yet or can't be joined. Publishes and returns the
     /// new data pack (the current one when `roots` is empty).
+    ///
+    /// A root with no provider makes the refresh publish an error data pack, matching upstream's
+    /// `requireNotNull`; callers must pass only known roots.
     pub fn refresh(&mut self, roots: &[VcsRoot]) -> Arc<VcsLogGraphData> {
         if roots.is_empty() {
             return self.current_data_pack.clone();
