@@ -7,9 +7,14 @@
 //! three markers; its length grows with the number of format errors seen in the process, so that
 //! a commit message containing a marker breaks at most a few parses.
 //!
-//! Lines are processed byte-wise: the markers are ASCII control characters, which never occur
-//! inside a multi-byte UTF-8 sequence, so items are cut at character boundaries (upstream works
-//! on UTF-16 chars).
+//! Because the tail is random and process-global, tests must build fixtures from the instance's
+//! [`GitLogParser::record_start`], [`GitLogParser::record_end`] and
+//! [`GitLogParser::items_separator`], never from the [`RECORD_START`], [`RECORD_END`] and
+//! [`ITEMS_SEPARATOR`] constants.
+//!
+//! Implementation detail with no behavioral effect: lines are processed byte-wise. The markers
+//! are ASCII control characters, which never occur inside a multi-byte UTF-8 sequence, so items
+//! are cut at character boundaries, as upstream does on UTF-16 chars.
 //!
 //! Deviation: errors upstream logs with `LOG.error` (format errors in `parse`) are dropped.
 
@@ -145,6 +150,27 @@ impl<B: GitLogRecordBuilder> GitLogParser<B> {
         }
     }
 
+    /// The record start marker this parser uses (the constant plus its random tail).
+    ///
+    /// Tests must build fixtures from this, not from [`RECORD_START`].
+    pub fn record_start(&self) -> &str {
+        marker_str(&self.options_parser.record_start)
+    }
+
+    /// The record end marker this parser uses (the constant plus its random tail).
+    ///
+    /// Tests must build fixtures from this, not from [`RECORD_END`].
+    pub fn record_end(&self) -> &str {
+        marker_str(&self.options_parser.record_end)
+    }
+
+    /// The items separator this parser uses (the constant plus its random tail).
+    ///
+    /// Tests must build fixtures from this, not from [`ITEMS_SEPARATOR`].
+    pub fn items_separator(&self) -> &str {
+        marker_str(&self.options_parser.items_separator)
+    }
+
     /// `parse`: all records of `output`. Records with format errors are skipped.
     pub fn parse(&mut self, output: &str) -> Vec<B::Record> {
         let mut result = Vec::new();
@@ -176,6 +202,9 @@ impl<B: GitLogRecordBuilder> GitLogParser<B> {
         self.parse_line_without_paths(line)
     }
 
+    /// Note: as upstream, a malformed record start (a line starting with the record start whose
+    /// options fail to parse) discards the pending record, because `create_record` has already
+    /// consumed it by the time the error is raised; the caller then clears the parser.
     fn parse_line_with_paths(&mut self, line: &str) -> Result<Option<B::Record>, GitFormatError> {
         if self.is_in_body {
             self.is_in_body = !self.options_parser.parse_line(line)?;
@@ -240,6 +269,10 @@ impl<B: GitLogRecordBuilder> GitLogParser<B> {
     pub fn get_pretty(&self) -> &str {
         &self.pretty
     }
+}
+
+fn marker_str(marker: &[u8]) -> &str {
+    std::str::from_utf8(marker).expect("markers are built from ASCII")
 }
 
 /// `makeFormatFromOptions(options, separator)`.
@@ -353,10 +386,12 @@ impl OptionsParser {
             && bytes[offset..].starts_with(&self.record_end)
     }
 
-    fn get_result(&self) -> OptionValues {
+    /// Moves the items out; callers clear the parser right afterwards.
+    fn get_result(&mut self) -> OptionValues {
+        let items = std::mem::take(&mut self.result.result);
         let mut values: OptionValues = Default::default();
-        for (option, value) in self.options.iter().zip(&self.result.result) {
-            values[option.index()] = Some(value.clone());
+        for (option, value) in self.options.iter().zip(items) {
+            values[option.index()] = Some(value);
         }
         values
     }
@@ -438,10 +473,9 @@ struct PartialResult {
 impl PartialResult {
     fn finish_item(&mut self) {
         let item = std::mem::take(&mut self.current_item);
-        self.result.push(
-            String::from_utf8(item)
-                .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()),
-        );
+        // The bytes come from a `&str` and are cut only at ASCII markers, so they stay valid UTF-8.
+        self.result
+            .push(String::from_utf8(item).expect("cut at ASCII markers from a &str"));
     }
 
     fn clear(&mut self) {

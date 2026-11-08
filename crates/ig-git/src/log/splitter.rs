@@ -39,7 +39,7 @@ impl<'p, B: GitLogRecordBuilder, F: FnMut(B::Record)> GitLogOutputSplitter<'p, B
             }
             OutputKind::Stdout => {
                 if let Err(e) = self.process_output_line(line) {
-                    self.exception = Some(e);
+                    self.exception.get_or_insert(e);
                 }
             }
         }
@@ -115,4 +115,36 @@ pub fn run_and_split<B: GitLogRecordBuilder>(
     }
     result.throw_on_error()?;
     splitter.report_errors()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::command::GitCommand;
+    use crate::log::parser::{GitLogOption, NameStatus};
+    use crate::log::record::DefaultGitLogRecordBuilder;
+
+    #[test]
+    fn first_stdout_error_wins() {
+        let handler = GitHandler::new("/repo", "git", GitCommand::LOG);
+        let mut parser = GitLogParser::new(
+            DefaultGitLogRecordBuilder,
+            true,
+            NameStatus::None,
+            &[GitLogOption::Hash, GitLogOption::Parents],
+        );
+        let (start, end) = (
+            parser.record_start().to_string(),
+            parser.record_end().to_string(),
+        );
+        let mut records = 0;
+        let mut splitter = GitLogOutputSplitter::new(&handler, &mut parser, |_| records += 1);
+        splitter.on_line_available(&format!("{start}first{end}"), OutputKind::Stdout);
+        splitter.on_line_available(&format!("{start}second{end}"), OutputKind::Stdout);
+        assert!(splitter.has_errors());
+        let message = splitter.report_errors().unwrap_err().to_string();
+        assert!(message.contains("first"), "{message}");
+        assert!(!message.contains("second"), "{message}");
+        assert_eq!(records, 0);
+    }
 }
