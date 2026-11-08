@@ -5,8 +5,11 @@
 //! `plugins/git4idea/backend/src/GitUserRegistry.java` with `GitConfigUtil.getValue`.
 //!
 //! Deviations:
-//! - Repository state comes from [`GitRepositoryManager`] (reread when refs are refreshed), not
-//!   from IDE-wide repository objects updated by file-system events.
+//! - Repository state comes from [`GitRepositoryManager`], not from IDE-wide repository objects
+//!   updated by file-system events. Explicit-update contract: callers (or a future watcher) call
+//!   [`GitRepositoryManager::update`] to pick up branch or HEAD changes; the state is also
+//!   reread when refs are refreshed, and a root without commits is reread automatically on
+//!   every read until it has some.
 //! - Branch refs are created in name order (upstream: `HashSet` order); refs and commits gathered
 //!   in sets upstream keep their first-seen order.
 //! - Not ported: the experimental refs collection (`GitLogExperimentalProvider`), filters
@@ -86,13 +89,14 @@ impl GitLogProvider {
     ) -> Result<DetailedLogData, VcsException> {
         let max_count = format!("--max-count={commit_count}");
         let mut refs: Vec<VcsRef> = Vec::new();
+        let mut seen_refs: HashSet<VcsRef> = HashSet::new();
         let mut commits: Vec<VcsCommitMetadata> = Vec::new();
         let mut seen_commits = HashSet::new();
         for tag in unmatched_tags {
             let log_data = collect_metadata_with_params(&self.git, root, &[&max_count, tag])
                 .map_err(vcs_error)?;
             for r in log_data.refs {
-                if !refs.contains(&r) {
+                if seen_refs.insert(r.clone()) {
                     refs.push(r);
                 }
             }
@@ -128,6 +132,11 @@ impl GitLogProvider {
     }
 }
 
+/// Converts a validated git hash to the log hash type.
+fn to_log_hash(h: &crate::hash::Hash) -> Hash {
+    Hash::try_build(h.as_str()).expect("validated by ig_git::hash::Hash")
+}
+
 /// `createBranchesRefs`: local and remote branches and HEAD of the repository state.
 fn create_branches_refs(info: &GitRepoInfo, root: &VcsRoot) -> Vec<VcsRef> {
     let mut locals: Vec<_> = info.state.local_branches.iter().collect();
@@ -139,19 +148,20 @@ fn create_branches_refs(info: &GitRepoInfo, root: &VcsRoot) -> Vec<VcsRef> {
         .map(|(b, h)| (b.name(), h))
         .collect();
     remotes.sort();
-    let to_hash = |h: &crate::hash::Hash| Hash::build(h.as_str());
     let mut refs: Vec<VcsRef> = locals
         .into_iter()
-        .map(|(branch, hash)| VcsRef::new(to_hash(hash), branch.name(), LOCAL_BRANCH, root.clone()))
+        .map(|(branch, hash)| {
+            VcsRef::new(to_log_hash(hash), branch.name(), LOCAL_BRANCH, root.clone())
+        })
         .collect();
     refs.extend(
         remotes
             .into_iter()
-            .map(|(name, hash)| VcsRef::new(to_hash(hash), &name, REMOTE_BRANCH, root.clone())),
+            .map(|(name, hash)| VcsRef::new(to_log_hash(hash), &name, REMOTE_BRANCH, root.clone())),
     );
     if let Some(revision) = &info.state.current_revision {
         refs.push(VcsRef::new(
-            Hash::build(revision),
+            to_log_hash(revision),
             "HEAD",
             HEAD,
             root.clone(),

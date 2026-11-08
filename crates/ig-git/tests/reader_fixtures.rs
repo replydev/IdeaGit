@@ -63,7 +63,7 @@ fn check_case(case: &str) {
         .trim()
         .to_string();
     assert_eq!(
-        state.current_revision.as_deref(),
+        state.current_revision.as_ref().map(|h| h.as_str()),
         Some(head.as_str()),
         "HEAD revision"
     );

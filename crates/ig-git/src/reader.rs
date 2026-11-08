@@ -34,7 +34,7 @@ pub enum RepositoryState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitBranchState {
-    pub current_revision: Option<String>,
+    pub current_revision: Option<Hash>,
     pub current_branch: Option<GitLocalBranch>,
     pub state: RepositoryState,
     pub local_branches: HashMap<GitLocalBranch, Hash>,
@@ -103,10 +103,10 @@ impl<'a> GitRepositoryReader<'a> {
         head_info: HeadInfo,
         state: RepositoryState,
         branches: &GitBranches,
-    ) -> (Option<GitLocalBranch>, Option<String>) {
+    ) -> (Option<GitLocalBranch>, Option<Hash>) {
         if let HeadInfo::Branch(branch) = head_info {
             let current = fix_current_branch_case(branch, branches);
-            let revision = branches.local.get(&current).map(|h| h.as_str().to_string());
+            let revision = branches.local.get(&current).cloned();
             return (Some(current), revision);
         }
         let current_branch = if state == RepositoryState::Rebasing {
@@ -116,7 +116,7 @@ impl<'a> GitRepositoryReader<'a> {
             None
         };
         match head_info {
-            HeadInfo::DetachedHead(hash) => (current_branch, Some(hash.as_str().to_string())),
+            HeadInfo::DetachedHead(hash) => (current_branch, Some(hash)),
             _ => (current_branch, None),
         }
     }

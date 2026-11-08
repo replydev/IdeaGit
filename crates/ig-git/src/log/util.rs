@@ -284,10 +284,11 @@ pub fn create_metadata(root: &VcsRoot, record: &GitLogRecord) -> Result<VcsCommi
     ))
 }
 
-/// `GitBranchUtil.getAllTags`: `git tag -l`.
+/// `GitBranchUtil.getAllTags`: `git tag -l --no-column`.
 pub fn get_all_tags(git: &Git, root: &Path) -> Result<Vec<String>> {
     let mut handler = git.handler(root, GitCommand::TAG);
-    handler.add_parameters(["-l"]);
+    // `--no-column`: `column.ui=always` would print several tags per line.
+    handler.add_parameters(["-l", "--no-column"]);
     handler.set_silent(true);
     let mut tags = Vec::new();
     let result = git.run_command_without_collecting_output(handler, &mut |line, kind| {

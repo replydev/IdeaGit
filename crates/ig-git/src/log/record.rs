@@ -4,7 +4,7 @@
 //! `GitLogRecordBuilder.kt`, `GitChangeType.java` and `GitChangesParser.getChangeType`.
 //!
 //! Like upstream, accessors return an empty string (or 0) for a value that wasn't requested.
-//! Deviations: no `setUsedHandler` (it only enriches log messages); a full record keeps its
+//! Deviations: `commit_time`/`author_time_stamp` return 0 for malformed values (upstream throws); no `setUsedHandler` (it only enriches log messages); a full record keeps its
 //! `--name-status` entries but doesn't build `Change` objects (`parseChanges`, out of scope until
 //! commit details are ported); path interning (`InternedGitLogRecordBuilder`) is not needed.
 
@@ -277,7 +277,11 @@ impl std::ops::Deref for GitLogFullRecord {
 
 /// `GitLogUtil.parseTime`: seconds to milliseconds.
 pub fn parse_time(time: Option<&str>) -> Option<i64> {
-    time?.trim().parse::<i64>().ok().map(|t| t * 1000)
+    time?
+        .trim()
+        .parse::<i64>()
+        .ok()
+        .map(|t| t.saturating_mul(1000))
 }
 
 /// Java `String.split(regex)` for a literal separator: trailing empty strings are dropped.

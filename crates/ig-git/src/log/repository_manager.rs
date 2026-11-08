@@ -96,8 +96,15 @@ impl GitRepositoryManager {
     }
 
     /// `getRepositoryUnlessFresh`: `None` for a repository without commits.
+    ///
+    /// A cached fresh state is reread first: upstream gets this from file-system events, which
+    /// are not ported, and without it a root first seen empty would stay empty forever. The
+    /// reread only costs anything while the repository has no commits.
     pub fn get_repository_unless_fresh(&self, root: &Path) -> Option<Arc<GitRepoInfo>> {
-        let info = self.get_repository(root);
+        let mut info = self.get_repository(root);
+        if info.is_fresh() {
+            info = self.update(root);
+        }
         (!info.is_fresh()).then_some(info)
     }
 

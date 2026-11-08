@@ -29,7 +29,10 @@ fn reads_branch_detached_and_merge_states() {
         state.current_branch.as_ref().map(|b| b.name()),
         Some("main")
     );
-    assert_eq!(state.current_revision.as_deref(), Some(head.as_str()));
+    assert_eq!(
+        state.current_revision.as_ref().map(|h| h.as_str()),
+        Some(head.as_str())
+    );
 
     // conflicting merge
     git(root, &["checkout", "-q", "-b", "other"]);
@@ -51,7 +54,10 @@ fn reads_branch_detached_and_merge_states() {
     let state = read_state(root);
     assert_eq!(state.state, RepositoryState::Detached);
     assert_eq!(state.current_branch, None);
-    assert_eq!(state.current_revision.as_deref(), Some(head.as_str()));
+    assert_eq!(
+        state.current_revision.as_ref().map(|h| h.as_str()),
+        Some(head.as_str())
+    );
 }
 
 #[test]
@@ -218,7 +224,10 @@ fn reftable_repository_states() {
         state.current_branch.as_ref().map(|b| b.name()),
         Some("main")
     );
-    assert_eq!(state.current_revision.as_deref(), Some(head.as_str()));
+    assert_eq!(
+        state.current_revision.as_ref().map(|h| h.as_str()),
+        Some(head.as_str())
+    );
     let mut names: Vec<String> = state
         .local_branches
         .keys()
@@ -230,7 +239,10 @@ fn reftable_repository_states() {
     git(root, &["checkout", "-q", "--detach"]);
     let state = read_state(root);
     assert_eq!(state.state, RepositoryState::Detached);
-    assert_eq!(state.current_revision.as_deref(), Some(head.as_str()));
+    assert_eq!(
+        state.current_revision.as_ref().map(|h| h.as_str()),
+        Some(head.as_str())
+    );
 
     git(root, &["checkout", "-q", "main"]);
     git(root, &["checkout", "-q", "--orphan", "newroot"]);
