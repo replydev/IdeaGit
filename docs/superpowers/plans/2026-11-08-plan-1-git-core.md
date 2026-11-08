@@ -4059,3 +4059,7 @@ Expected: no fmt diff, no clippy warnings, and every test passing: 34 unit tests
 - Splitting long path lists into chunks for `status` (Plan 4).
 - Askpass and credential handling (Plan 8).
 - Minimum-git CI job (Plan 9).
+- Runner cancellation, plus not hanging when a grandchild keeps a pipe open after git exits (ssh ControlPersist, backgrounded hooks). Do both in Plan 8 by polling `try_wait` with a reader grace period and making lock acquisition interruptible.
+- Reporting read errors on the output pipes as a failed result, and `*_ignoring(codes)` variants of `output_or_error`/`throw_on_error` (add with the first caller).
+- Test isolation for commands run inside library functions such as `get_file_status`. Integration tests can isolate handlers they build themselves (`common::isolate`). Library-created handlers still inherit the developer's global git config, so Plan 4 (commit) needs a test-only base environment on `Git`.
+- CI: MSRV (1.85) check job and cargo caching (Plan 9).

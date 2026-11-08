@@ -6,11 +6,12 @@ use std::process::Command;
 use std::sync::Arc;
 
 use ig_git::console::{ConsoleSink, NullConsole};
+use ig_git::handler::GitHandler;
 use ig_git::runner::Git;
 
 /// An empty file used as the global git config, so the developer's config can't affect tests.
 fn empty_global_config() -> PathBuf {
-    let path = std::env::temp_dir().join("ideagit-tests-empty-gitconfig");
+    let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("empty-gitconfig");
     if !path.exists() {
         std::fs::write(&path, "").unwrap();
     }
@@ -30,6 +31,18 @@ pub fn git_output(dir: &Path, args: &[&str]) -> std::process::Output {
         .env("GIT_COMMITTER_EMAIL", "test@example.com")
         .output()
         .expect("git is installed")
+}
+
+/// Applies the same isolation as [`git_output`] (no global/system config, fixed identity) to a
+/// handler run through the library runner.
+pub fn isolate(h: &mut GitHandler) {
+    let config = empty_global_config();
+    h.add_custom_environment_variable("GIT_CONFIG_GLOBAL", config.to_str().expect("utf-8 path"));
+    h.add_custom_environment_variable("GIT_CONFIG_NOSYSTEM", "1");
+    h.add_custom_environment_variable("GIT_AUTHOR_NAME", "Test");
+    h.add_custom_environment_variable("GIT_AUTHOR_EMAIL", "test@example.com");
+    h.add_custom_environment_variable("GIT_COMMITTER_NAME", "Test");
+    h.add_custom_environment_variable("GIT_COMMITTER_EMAIL", "test@example.com");
 }
 
 /// Like [`git_output`], panicking on failure; returns stdout.

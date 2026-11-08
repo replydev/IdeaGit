@@ -2,6 +2,10 @@
 //! (environment, write locking, console logging, output collection) and `GitCommandResult.java`.
 //!
 //! Commands run synchronously on the calling thread; callers (UI) run them on a background executor.
+//!
+//! Known gaps, scheduled with cancellation in the fetch/push plan: a grandchild process that keeps
+//! a pipe open (ssh ControlPersist, backgrounded hooks) delays completion until it exits, and the
+//! write lock cannot be interrupted while waiting.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -41,7 +45,7 @@ impl GitCommandResult {
     }
 
     /// Upstream `getErrorOrStdOutput`: stderr, else stdout on failure, else a generic exit message.
-    pub fn presentable_error_output(&self) -> Vec<String> {
+    fn error_or_std_output(&self) -> Vec<String> {
         if !self.error_output.is_empty() {
             return self.error_output.clone();
         }
@@ -55,6 +59,16 @@ impl GitCommandResult {
             "The Git process exited with the code {}",
             self.exit_code
         )]
+    }
+
+    /// Upstream `getPresentableErrorOutput`: [`Self::error_or_std_output`] without `@...@` banner
+    /// lines and without `fatal:` / `error:` prefixes.
+    pub fn presentable_error_output(&self) -> Vec<String> {
+        self.error_or_std_output()
+            .into_iter()
+            .filter(|line| !is_git_error_header_line(line))
+            .map(|line| cleanup_error_prefixes(&line))
+            .collect()
     }
 
     pub fn error_output_as_joined_string(&self) -> String {
@@ -75,6 +89,34 @@ impl GitCommandResult {
             Err(GitError::Command(self.error_output_as_joined_string()))
         }
     }
+}
+
+/// Upstream `GitCommandResult.isGitErrorHeaderLine`: lines of ASCII-art banners (e.g. ssh warnings).
+fn is_git_error_header_line(line: &str) -> bool {
+    line.starts_with('@') && line.ends_with('@')
+}
+
+/// Upstream `GitUtil.cleanupErrorPrefixes`.
+pub fn cleanup_error_prefixes(msg: &str) -> String {
+    let mut msg = msg.trim();
+    for prefix in ["fatal:", "error:"] {
+        if let Some(rest) = msg.strip_prefix(prefix) {
+            msg = rest.trim();
+        }
+    }
+    msg.to_string()
+}
+
+/// Exit code as the JVM reports it: 128 + signal number for processes killed by a signal.
+fn exit_code_of(status: std::process::ExitStatus) -> i32 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            return 128 + signal;
+        }
+    }
+    status.code().unwrap_or(-1)
 }
 
 /// Runs git commands for one project. Holds the per-project command lock (upstream
@@ -106,7 +148,7 @@ impl Git {
     pub fn detect(executable: impl Into<PathBuf>, console: Arc<dyn ConsoleSink>) -> Result<Git> {
         let executable = executable.into();
         let probe = Git::new(executable.clone(), GitVersion::NULL, console.clone());
-        let cwd = std::env::current_dir()?;
+        let cwd = std::env::temp_dir();
         let result = probe.run_command(probe.handler(&cwd, GitCommand::VERSION));
         let output = result.output_or_error()?;
         let version = GitVersion::parse(&output)?;
@@ -199,7 +241,7 @@ impl Git {
         let _ = out_thread.join();
         let _ = err_thread.join();
         let exit_code = match child.wait() {
-            Ok(status) => status.code().unwrap_or(-1),
+            Ok(status) => exit_code_of(status),
             Err(_) => -1,
         };
         if log_to_console {
@@ -328,8 +370,10 @@ fn spawn_reader<R: Read + Send + 'static>(
         };
         loop {
             match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
+                Ok(0) => break,
                 Ok(n) => splitter.feed(&buf[..n], &mut emit),
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => break,
             }
         }
         splitter.finish(&mut emit);
@@ -355,6 +399,29 @@ mod tests {
         assert_eq!(split(&[b"a\nb\r\nc\rd"]), ["a", "b", "c", "d"]);
         assert_eq!(split(&[b"a\r", b"\nb\n"]), ["a", "b"]);
         assert_eq!(split(&[b"\n\n"]), ["", ""]);
+        assert_eq!(split(&[b"a\r", b"b"]), ["a", "b"]);
+        assert_eq!(split(&[b"a\r"]), ["a"]);
+        assert_eq!(split(&[b"a\r\rb"]), ["a", "", "b"]);
+    }
+
+    #[test]
+    fn presentable_errors_are_cleaned_up() {
+        let r = GitCommandResult {
+            start_failed: false,
+            exit_code: 128,
+            output: vec![],
+            error_output: vec![
+                "@@@@@@@@@@@@".into(),
+                "@    WARNING: UNPROTECTED PRIVATE KEY FILE!    @".into(),
+                "fatal: not a git repository".into(),
+                "  error: bad thing ".into(),
+            ],
+        };
+        assert_eq!(
+            r.presentable_error_output(),
+            ["not a git repository", "bad thing"]
+        );
+        assert_eq!(cleanup_error_prefixes("fatal: error: x"), "x");
     }
 
     #[test]
@@ -368,6 +435,9 @@ mod tests {
         ));
         assert!(looks_like_progress(
             "Expanding reachable commits in commit graph: 95907"
+        ));
+        assert!(looks_like_progress(
+            "Receiving objects: 100% (57489/57489), 50.03 MiB | 2.83 MiB/s, done."
         ));
         assert!(!looks_like_progress("fatal: not a git repository"));
     }

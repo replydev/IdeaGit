@@ -4,7 +4,7 @@ mod common;
 
 use std::sync::Arc;
 
-use common::{init_repo, runner, runner_with};
+use common::{init_repo, isolate, runner, runner_with};
 use ig_git::command::GitCommand;
 use ig_git::console::{ConsoleEvent, OutputKind, RecordingConsole};
 
@@ -27,11 +27,13 @@ fn write_commands_are_logged_to_console_read_commands_are_not() {
     let before = console.events().len();
 
     let mut status = g.handler(tmp.path(), GitCommand::STATUS);
+    isolate(&mut status);
     status.add_parameters(["--porcelain"]);
     assert!(g.run_command(status).success());
     assert_eq!(console.events().len(), before, "status is silent");
 
     let mut checkout = g.handler(tmp.path(), GitCommand::CHECKOUT);
+    isolate(&mut checkout);
     checkout.add_parameters(["-b", "feature"]);
     let result = g.run_command(checkout);
     assert!(result.success(), "{:?}", result);
@@ -65,6 +67,7 @@ fn failed_command_reports_stderr() {
     init_repo(tmp.path());
     let g = runner();
     let mut h = g.handler(tmp.path(), GitCommand::CHECKOUT);
+    isolate(&mut h);
     h.add_parameters(["no-such-branch"]);
     let result = g.run_command(h);
     assert!(!result.success());
