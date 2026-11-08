@@ -1,0 +1,13 @@
+[workspace]
+resolver = "3"
+members = ["crates/ig-git"]
+
+[workspace.package]
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.85"
+
+[workspace.dependencies]
+regex = "1"
+thiserror = "2"
+tempfile = "3"

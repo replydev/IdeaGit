@@ -1,0 +1,90 @@
+# Rust module -> intellij-community files it was ported from.
+# pinned:     upstream commit this module last matched (see reference/UPSTREAM)
+# tests:      upstream tests ported alongside
+# deviations: intentional differences from upstream
+
+[modules."ig-git::command"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["plugins/git4idea/backend/src/commands/GitCommand.java"]
+
+[modules."ig-git::handler"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "plugins/git4idea/backend/src/commands/GitHandler.java",
+  "plugins/git4idea/backend/src/commands/GitLineHandler.java",
+  "platform/vcs-impl/src/com/intellij/vcs/VcsLocaleHelper.kt",
+]
+deviations = [
+  "No WSL/Eel executables, no Windows .cmd escaping, no VcsEnvCustomizer extensions",
+  "Also sets IDEAGIT_GIT_EXECUTABLE=true next to INTELLIJ_GIT_EXECUTABLE=true",
+]
+
+[modules."ig-git::runner"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["plugins/git4idea/backend/src/commands/GitImplBase.java", "plugins/git4idea/backend/src/commands/GitCommandResult.java"]
+deviations = [
+  "Synchronous std::process execution on the calling thread; callers use a background executor",
+  "No root-name prefix in error messages yet (multi-root presentation comes with the UI)",
+]
+
+[modules."ig-git::console"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["plugins/git4idea/backend/src/commands/GitImplBase.java#GitCommandOutputLogger"]
+
+[modules."ig-git::version"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["plugins/git4idea/backend/src/config/GitVersion.java", "plugins/git4idea/backend/src/config/GitVersionSpecialty.kt"]
+tests = ["plugins/git4idea/tests/git4idea/tests/GitVersionTest.java"]
+deviations = ["WSL1/WSL2 types not ported", "Only the specialties used so far are ported"]
+
+[modules."ig-git::status"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["plugins/git4idea/backend/src/index/GitIndexStatusUtil.kt"]
+deviations = ["Long path lists are not split into chunks (GitUtil.createHandlerWithPaths)"]
+
+[modules."ig-git::hash"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-impl/shared/src/com/intellij/vcs/log/impl/HashImpl.java"]
+
+[modules."ig-git::refs"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "plugins/git4idea/backend/src/repo/GitRefUtil.java",
+  "plugins/git4idea/backend/src/validators/GitRefNameValidator.java",
+  "plugins/git4idea/shared/src/com/intellij/vcs/git/ref/GitRefUtil.kt",
+]
+
+[modules."ig-git::repo_files"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "plugins/git4idea/backend/src/repo/GitRepositoryFiles.java",
+  "plugins/git4idea/backend/src/GitUtil.java#findGitDir",
+  "platform/dvcs-impl/src/com/intellij/dvcs/DvcsUtil.java#tryLoadFile",
+]
+
+[modules."ig-git::config"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["plugins/git4idea/backend/src/repo/GitConfig.java#parseRemotes"]
+deviations = ["Remotes only; no include/includeIf, no url.insteadOf yet"]
+
+[modules."ig-git::branch"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "plugins/git4idea/backend/src/GitLocalBranch.kt",
+  "plugins/git4idea/shared/src/git4idea/GitBranch.kt",
+  "plugins/git4idea/shared/src/git4idea/GitStandardRemoteBranch.kt",
+  "plugins/git4idea/shared/src/git4idea/GitSvnRemoteBranch.kt",
+  "plugins/git4idea/backend/src/GitUtil.java#parseRemoteBranch",
+]
+deviations = ["Branch names compare case-sensitively (upstream: case-insensitive on case-insensitive file systems)"]
+
+[modules."ig-git::reader"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["plugins/git4idea/backend/src/repo/GitRepositoryReader.kt"]
+tests = ["plugins/git4idea/tests/git4idea/repo/GitRepositoryReaderTest.kt", "plugins/git4idea/testData/repo"]
+deviations = ["Hooks info and shallow detection not yet ported"]
+
+[modules."ig-git::roots"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-impl/src/com/intellij/openapi/vcs/roots/VcsRootDetectorImpl.java"]
+deviations = ["Simplified: enclosing root + bounded downward scan with a fixed skip list"]

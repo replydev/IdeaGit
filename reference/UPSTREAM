@@ -1,0 +1,4 @@
+# The intellij-community revision IdeaGit is ported from.
+repository = "https://github.com/JetBrains/intellij-community"
+branch = "263"
+commit = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"

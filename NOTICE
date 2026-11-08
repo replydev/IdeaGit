@@ -1,0 +1,19 @@
+IdeaGit
+Copyright 2026 The IdeaGit contributors
+
+This product includes software ported from IntelliJ IDEA Community Edition
+(https://github.com/JetBrains/intellij-community),
+Copyright 2000-2026 JetBrains s.r.o. and contributors,
+licensed under the Apache License, Version 2.0.
+
+Each ported Rust module names its upstream source files in its module documentation;
+reference/upstream-map.toml lists all of them together with the upstream commit they match.
+
+The NOTICE file of intellij-community reads:
+
+    This software includes code from IntelliJ IDEA
+    Copyright (C) JetBrains s.r.o.
+    https://www.jetbrains.com/idea/
+
+Test data under crates/ig-git/tests/fixtures/repo is copied unchanged from
+intellij-community/plugins/git4idea/testData/repo.
