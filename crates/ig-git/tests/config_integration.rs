@@ -27,7 +27,6 @@ fn reads_remotes_including_included_files_and_case_sensitive_names() {
 
     let remotes = read_remotes(&runner(), root);
     let mut names: Vec<&str> = remotes.iter().map(|r| r.name.as_str()).collect();
-    names.retain(|n| ["origin", "Upstream", "inc"].contains(n));
     names.sort();
     assert_eq!(names, ["Upstream", "inc", "origin"]);
     let inc = remotes.iter().find(|r| r.name == "inc").unwrap();

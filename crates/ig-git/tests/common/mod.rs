@@ -18,19 +18,34 @@ fn empty_global_config() -> PathBuf {
     path
 }
 
+/// Inherited variables that would redirect git away from the test repository.
+pub const SCRUBBED_ENV: &[&str] = &[
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_NAMESPACE",
+    "GIT_PREFIX",
+];
+
 /// Runs git in `dir` with a fixed identity and no global/system config; returns the raw output.
 pub fn git_output(dir: &Path, args: &[&str]) -> std::process::Output {
-    Command::new("git")
-        .args(args)
+    let mut cmd = Command::new("git");
+    cmd.args(args)
         .current_dir(dir)
         .env("GIT_CONFIG_GLOBAL", empty_global_config())
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_AUTHOR_NAME", "Test")
         .env("GIT_AUTHOR_EMAIL", "test@example.com")
         .env("GIT_COMMITTER_NAME", "Test")
-        .env("GIT_COMMITTER_EMAIL", "test@example.com")
-        .output()
-        .expect("git is installed")
+        .env("GIT_COMMITTER_EMAIL", "test@example.com");
+    for v in SCRUBBED_ENV {
+        cmd.env_remove(v);
+    }
+    cmd.output().expect("git is installed")
 }
 
 /// Applies the same isolation as [`git_output`] (no global/system config, fixed identity) to a
@@ -43,6 +58,9 @@ pub fn isolate(h: &mut GitHandler) {
     h.add_custom_environment_variable("GIT_AUTHOR_EMAIL", "test@example.com");
     h.add_custom_environment_variable("GIT_COMMITTER_NAME", "Test");
     h.add_custom_environment_variable("GIT_COMMITTER_EMAIL", "test@example.com");
+    for v in SCRUBBED_ENV {
+        h.remove_inherited_environment_variable(v);
+    }
 }
 
 /// Like [`git_output`], panicking on failure; returns stdout.
@@ -70,5 +88,18 @@ pub fn runner() -> Git {
 }
 
 pub fn runner_with(console: Arc<dyn ConsoleSink>) -> Git {
-    Git::detect("git", console).expect("git is installed and detectable")
+    let config = empty_global_config();
+    Git::detect("git", console)
+        .expect("git is installed and detectable")
+        .with_base_environment(
+            &[
+                ("GIT_CONFIG_GLOBAL", config.to_str().expect("utf-8 path")),
+                ("GIT_CONFIG_NOSYSTEM", "1"),
+                ("GIT_AUTHOR_NAME", "Test"),
+                ("GIT_AUTHOR_EMAIL", "test@example.com"),
+                ("GIT_COMMITTER_NAME", "Test"),
+                ("GIT_COMMITTER_EMAIL", "test@example.com"),
+            ],
+            SCRUBBED_ENV,
+        )
 }

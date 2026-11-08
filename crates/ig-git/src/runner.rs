@@ -61,7 +61,7 @@ impl GitCommandResult {
         )]
     }
 
-    /// Upstream `getPresentableErrorOutput`: [`Self::error_or_std_output`] without `@...@` banner
+    /// Upstream `getPresentableErrorOutput`: `error_or_std_output` without `@...@` banner
     /// lines and without `fatal:` / `error:` prefixes.
     pub fn presentable_error_output(&self) -> Vec<String> {
         self.error_or_std_output()
@@ -127,6 +127,8 @@ pub struct Git {
     console: Arc<dyn ConsoleSink>,
     command_lock: Mutex<()>,
     next_id: AtomicU64,
+    base_env: Vec<(String, String)>,
+    base_env_removed: Vec<String>,
 }
 
 impl Git {
@@ -141,7 +143,20 @@ impl Git {
             console,
             command_lock: Mutex::new(()),
             next_id: AtomicU64::new(1),
+            base_env: Vec::new(),
+            base_env_removed: Vec::new(),
         }
+    }
+
+    /// Environment applied to every handler created by [`Git::handler`] (on top of the inherited
+    /// process environment). Used by tests to isolate git from the developer's configuration.
+    pub fn with_base_environment(mut self, set: &[(&str, &str)], remove: &[&str]) -> Self {
+        self.base_env = set
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        self.base_env_removed = remove.iter().map(|s| s.to_string()).collect();
+        self
     }
 
     /// Runs `git version` with `executable` and returns a runner configured with the detected version.
@@ -165,7 +180,14 @@ impl Git {
 
     /// Creates a handler for this executable.
     pub fn handler(&self, working_dir: &Path, command: GitCommand) -> GitHandler {
-        GitHandler::new(working_dir, &self.executable, command)
+        let mut handler = GitHandler::new(working_dir, &self.executable, command);
+        for (k, v) in &self.base_env {
+            handler.add_custom_environment_variable(k, v);
+        }
+        for name in &self.base_env_removed {
+            handler.remove_inherited_environment_variable(name);
+        }
+        handler
     }
 
     /// Upstream `GitImplBase.doRun`.

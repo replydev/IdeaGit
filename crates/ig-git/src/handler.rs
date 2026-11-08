@@ -27,6 +27,7 @@ pub struct GitHandler {
     /// Everything after the executable: `-c` pairs, the command name, then its arguments.
     parameters: Vec<String>,
     custom_env: Vec<(String, String)>,
+    removed_env: Vec<String>,
     silent: bool,
     stdout_suppressed: bool,
     stderr_suppressed: bool,
@@ -60,6 +61,7 @@ impl GitHandler {
             command,
             parameters,
             custom_env: Vec::new(),
+            removed_env: Vec::new(),
             // Upstream: non-write commands are not logged to the console by default.
             silent: command.locking_policy() != LockingPolicy::Write,
             stdout_suppressed: true,
@@ -134,6 +136,13 @@ impl GitHandler {
         }
     }
 
+    /// Removes an inherited environment variable from the command's environment.
+    pub fn remove_inherited_environment_variable(&mut self, name: &str) {
+        if !self.removed_env.iter().any(|n| n == name) {
+            self.removed_env.push(name.to_string());
+        }
+    }
+
     /// Upstream `containsCustomEnvironmentVariable`.
     pub fn contains_custom_environment_variable(&self, name: &str) -> bool {
         self.custom_env.iter().any(|(k, _)| k == name)
@@ -163,6 +172,9 @@ impl GitHandler {
     pub fn build_command(&self) -> Command {
         let mut cmd = Command::new(&self.executable);
         cmd.args(&self.parameters).current_dir(&self.working_dir);
+        for name in &self.removed_env {
+            cmd.env_remove(name);
+        }
         for (k, v) in self.environment() {
             cmd.env(k, v);
         }
@@ -252,6 +264,19 @@ mod tests {
         );
         assert!(env.contains(&("GIT_OPTIONAL_LOCKS".into(), "0".into())));
         assert!(env.contains(&(IJ_HANDLER_MARKER_ENV.into(), "true".into())));
+    }
+
+    #[test]
+    fn removed_inherited_variable_is_reported_by_command() {
+        let mut h = GitHandler::new("/repo", "git", GitCommand::STATUS);
+        h.remove_inherited_environment_variable("GIT_DIR");
+        h.remove_inherited_environment_variable("GIT_DIR");
+        let cmd = h.build_command();
+        let removed: Vec<_> = cmd
+            .get_envs()
+            .filter(|(k, _)| *k == std::ffi::OsStr::new("GIT_DIR"))
+            .collect();
+        assert_eq!(removed, [(std::ffi::OsStr::new("GIT_DIR"), None)]);
     }
 
     #[test]
