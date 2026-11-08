@@ -31,6 +31,9 @@ impl GitRepositoryFiles {
     pub fn worktree_git_dir(&self) -> &Path {
         &self.worktree_dir
     }
+    /// Shared `.git` dir of all worktrees. Like upstream, it is resolved lexically, so the same
+    /// repository can be reached through different paths (e.g. `/tmp` vs `/private/tmp` on macOS):
+    /// canonicalize before comparing repositories by this path.
     pub fn common_git_dir(&self) -> &Path {
         &self.main_dir
     }
@@ -116,7 +119,7 @@ pub fn find_git_dir(root_dir: &Path) -> Option<PathBuf> {
     if !dot_git.is_file() {
         return None;
     }
-    let content = std::fs::read_to_string(&dot_git).ok()?;
+    let content = try_load_file(&dot_git).ok()?;
     let path = parse_path_to_repository(&content)?;
     let resolved = normalize(&root_dir.join(path)); // join keeps absolute paths as-is
     resolved.is_dir().then_some(resolved)
@@ -137,8 +140,9 @@ pub fn parse_path_to_repository(content: &str) -> Option<String> {
 
 /// Upstream `DvcsUtil.tryLoadFile`: file content with normalized line separators, trimmed.
 pub fn try_load_file(path: &Path) -> Result<String> {
-    let content = std::fs::read_to_string(path)
+    let bytes = std::fs::read(path)
         .map_err(|e| GitError::RepoState(format!("couldn't load {}: {e}", path.display())))?;
+    let content = String::from_utf8_lossy(&bytes);
     Ok(content
         .replace("\r\n", "\n")
         .replace('\r', "\n")
@@ -147,13 +151,18 @@ pub fn try_load_file(path: &Path) -> Result<String> {
 }
 
 /// Lexically resolves `.` and `..` (upstream `FileUtil.toCanonicalPath`), without touching symlinks.
+/// Leading `..` components of a relative path are kept.
 fn normalize(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for c in path.components() {
         match c {
             Component::CurDir => {}
             Component::ParentDir => {
-                out.pop();
+                if matches!(out.components().next_back(), Some(Component::Normal(_))) {
+                    out.pop();
+                } else {
+                    out.push("..");
+                }
             }
             other => out.push(other.as_os_str()),
         }
@@ -180,6 +189,53 @@ mod tests {
             normalize(Path::new("/a/b/../c/./d")),
             PathBuf::from("/a/c/d")
         );
+    }
+
+    #[test]
+    fn normalize_keeps_leading_parent_dirs() {
+        assert_eq!(normalize(Path::new("../x/./y/..")), PathBuf::from("../x"));
+    }
+
+    #[test]
+    fn try_load_file_normalizes_and_is_lenient() {
+        let tmp = tempfile::tempdir().unwrap();
+        let f = tmp.path().join("f");
+        std::fs::write(&f, b"a\r\nb\rc\xff \n").unwrap();
+        assert_eq!(try_load_file(&f).unwrap(), "a\nb\nc\u{fffd}");
+        assert!(try_load_file(&tmp.path().join("missing")).is_err());
+    }
+
+    #[test]
+    fn finds_git_dir_for_repo_submodule_and_rejects_others() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        assert_eq!(
+            find_git_dir(&repo),
+            None,
+            ".git without HEAD is not a repository"
+        );
+        std::fs::write(repo.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        assert_eq!(find_git_dir(&repo), Some(repo.join(".git")));
+
+        let modules = repo.join(".git/modules/sub");
+        std::fs::create_dir_all(&modules).unwrap();
+        let sub = repo.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join(".git"), "gitdir: ../.git/modules/sub\n").unwrap();
+        assert_eq!(find_git_dir(&sub), Some(modules.clone()));
+        let files = GitRepositoryFiles::create(&sub, &modules);
+        assert_eq!(
+            files.common_git_dir(),
+            modules.as_path(),
+            "submodule without commondir"
+        );
+
+        let dangling = tmp.path().join("dangling");
+        std::fs::create_dir_all(&dangling).unwrap();
+        std::fs::write(dangling.join(".git"), "gitdir: /no/such/dir\n").unwrap();
+        assert_eq!(find_git_dir(&dangling), None);
+        assert_eq!(find_git_dir(tmp.path()), None);
     }
 
     #[test]
