@@ -1,6 +1,6 @@
 //! Commit hashes.
 //!
-//! Ported from `platform/vcs-log/api/src/com/intellij/vcs/log/Hash.java` and
+//! Ported from `platform/vcs-api/shared/src/com/intellij/vcs/log/Hash.java` and
 //! `platform/vcs-impl/shared/src/com/intellij/vcs/log/impl/HashImpl.java`.
 //!
 //! Like `HashImpl`, a hash is stored as bytes: a parity byte (1 for an odd number of hex digits),

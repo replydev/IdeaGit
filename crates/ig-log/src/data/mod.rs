@@ -1,8 +1,9 @@
 //! VCS-agnostic log data: commits, references, commit-id interning, sorting and joining, the data
 //! pack (permanent graph plus references) and the refresher that loads it.
 //!
-//! Ported from `platform/vcs-log/api` (`Hash`, `TimedVcsCommit`, `VcsCommitMetadata`, `VcsRef`,
-//! `VcsRefType`, `VcsUser`, `VcsLogProvider`, `VcsLogRefManager`, ...) and
+//! Ported from `platform/vcs-api/shared` (`Hash`, `VcsUser`), `platform/vcs-log/api`
+//! (`TimedVcsCommit`, `VcsCommitMetadata`, `VcsRef`, `VcsRefType`, `VcsLogProvider`,
+//! `VcsLogRefManager`, ...) and
 //! `platform/vcs-log/impl/src/com/intellij/vcs/log/{data,graph,impl}`. Each module names its
 //! upstream files; see also `reference/upstream-map.toml`.
 //!

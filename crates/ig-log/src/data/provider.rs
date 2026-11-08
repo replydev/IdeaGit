@@ -25,7 +25,17 @@ use crate::data::vcs_user::VcsUser;
 /// A VCS operation failed (`VcsException`).
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
-pub struct VcsException(pub String);
+pub struct VcsException(String);
+
+impl VcsException {
+    pub fn new(message: impl Into<String>) -> Self {
+        VcsException(message.into())
+    }
+
+    pub fn message(&self) -> &str {
+        &self.0
+    }
+}
 
 /// Orders references (`VcsLogRefManager`, comparators only).
 pub trait VcsLogRefManager: Send + Sync {
@@ -35,6 +45,12 @@ pub trait VcsLogRefManager: Send + Sync {
 
     /// `getLabelsOrderComparator`: the order of reference labels on a commit row.
     fn labels_order_compare(&self, ref1: &VcsRef, ref2: &VcsRef) -> Ordering;
+
+    /// Sorts labels for display. Implementations whose ordering depends on mutable state
+    /// (e.g. the current branch) must snapshot it once per call so the sort sees a total order.
+    fn sort_labels(&self, refs: &mut [VcsRef]) {
+        refs.sort_by(|a, b| self.labels_order_compare(a, b));
+    }
 
     /// Upstream `toString()`, used to order heads of different VCSs.
     fn name(&self) -> String;

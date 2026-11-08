@@ -131,7 +131,7 @@ impl VcsLogProvider for TestVcsLogProvider {
             .fail_next_read_first_block
             .swap(false, AtomicOrdering::SeqCst)
         {
-            return Err(VcsException("read_first_block failed".to_string()));
+            return Err(VcsException::new("read_first_block failed"));
         }
         let commits = self.commits.lock().unwrap();
         let metadatas = commits[..requirements.commit_count.min(commits.len())]

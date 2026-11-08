@@ -698,7 +698,7 @@ tests = [
 ]
 deviations = [
   "Synchronous: no request channel/batching, progress, cancellation, overlay data or tracing; the caller serializes calls on a background thread",
-  "VcsLogRefresherTest: the blocking/cancellation/batching cases (test_first_refresh_waits_for_full_log, test_reinitialize_makes_refresh_cancelled, test_two_immediately_consecutive_refreshes...) don't apply",
+  "VcsLogRefresherTest: the blocking/cancellation/batching cases (test_first_refresh_waits_for_full_log, test_two_immediately_consecutive_refreshes...) don't apply; the applicable part of test_reinitialize_makes_refresh_cancelled (initializing twice publishes nothing more) is covered in vcs_log_refresher_extra.rs",
   "Every commit list is checked for unique ids and topological order before building the graph (upstream builds silently); a failing joined log forces a full reload, a failing first block or full log gives an error data pack",
   "Roots are processed in path order (upstream HashMap order)",
   "Recent first-block metadata goes to an optional consumer (upstream VcsLogCommitDataConsumer.storeRecentDetails)",

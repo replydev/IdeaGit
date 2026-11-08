@@ -1,3 +1,5 @@
+//! IdeaGit tests (not ported from upstream).
+//!
 //! Extra tests for the git ref manager and repository manager: root tiebreak, current branch with
 //! master present, comparator antisymmetry, snapshot sorting and repository removal.
 
@@ -8,9 +10,10 @@ use std::sync::Arc;
 
 use common::log_helpers::{init_master_repo, last};
 use common::{git, runner};
+use ig_git::log::provider::GitLogProvider;
 use ig_git::log::ref_manager::{GitRefManager, HEAD, LOCAL_BRANCH, REMOTE_BRANCH, TAG};
 use ig_git::log::repository_manager::GitRepositoryManager;
-use ig_log::data::{Hash, VcsLogRefManager, VcsRef, VcsRefType, VcsRoot};
+use ig_log::data::{Hash, VcsLogProvider, VcsLogRefManager, VcsRef, VcsRefType, VcsRoot};
 
 fn make_ref(root: &VcsRoot, name: &str, ref_type: VcsRefType) -> VcsRef {
     VcsRef::new(Hash::build(&last(root)), name, ref_type, root.clone())
@@ -145,4 +148,19 @@ fn remove_and_retain_roots_drop_cached_state() {
     repos.retain_roots(std::slice::from_ref(&root1));
     assert!(repos.get_repository_for_root_quick(&root1).is_some());
     assert!(repos.get_repository_for_root_quick(&root2).is_none());
+}
+
+#[test]
+fn sort_labels_through_dyn_trait_matches_git_ref_manager() {
+    let (_tmp, root, repos, refs, all) = feature_checked_out();
+    let provider = GitLogProvider::with_repository_manager(repos);
+    let dyn_refs: Arc<dyn VcsLogRefManager> = provider.reference_manager();
+    let mut mixed = all;
+    mixed.push(make_ref(&root, "feature", REMOTE_BRANCH));
+
+    let mut expected = mixed.clone();
+    refs.sort_labels(&mut expected);
+    let mut actual = mixed;
+    dyn_refs.sort_labels(&mut actual);
+    assert_eq!(actual, expected);
 }

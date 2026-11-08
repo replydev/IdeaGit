@@ -137,7 +137,7 @@ fn refresher_rejects_non_topological_full_log() {
     let mut refresher = VcsLogRefresher::new(Arc::new(InMemoryStorage::new()), providers, 1);
     let pack = refresher.initialize();
     let error = pack.load_error().expect("error data pack");
-    assert!(error.0.contains("topological"), "{error}");
+    assert!(error.message().contains("topological"), "{error}");
 }
 
 #[test]

@@ -1,6 +1,6 @@
 //! Commit authors and committers.
 //!
-//! Ported from `platform/vcs-log/api/src/com/intellij/vcs/log/VcsUser.java`,
+//! Ported from `platform/vcs-api/shared/src/com/intellij/vcs/log/VcsUser.java`,
 //! `platform/vcs-impl/shared/src/com/intellij/vcs/log/impl/VcsUserImpl.kt` and the parts of
 //! `platform/vcs-impl/shared/src/com/intellij/vcs/log/util/VcsUserUtil.java` used by the log data.
 //!

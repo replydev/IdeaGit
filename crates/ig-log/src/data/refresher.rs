@@ -203,7 +203,7 @@ impl VcsLogRefresher {
         let mut compound_list =
             multi_repo_joiner::join(data.commits_by_root.into_values().collect());
         compound_list.truncate(count);
-        check_commits(&compound_list).map_err(VcsException)?;
+        check_commits(&compound_list).map_err(VcsException::new)?;
         Ok(build_data(
             &compound_list,
             data.refs_by_root,
@@ -258,7 +258,7 @@ impl VcsLogRefresher {
     fn load_full_log(&mut self) -> Result<VcsLogGraphData, VcsException> {
         let data = self.read_full_log_from_vcs()?;
         let graph_commits = multi_repo_joiner::join(data.commits_by_root.into_values().collect());
-        check_commits(&graph_commits).map_err(VcsException)?;
+        check_commits(&graph_commits).map_err(VcsException::new)?;
         Ok(build_data(
             &graph_commits,
             data.refs_by_root,
@@ -278,7 +278,7 @@ impl VcsLogRefresher {
                 .providers
                 .get(&root)
                 .ok_or_else(|| {
-                    VcsException(format!("Cannot find provider for root {}", root.display()))
+                    VcsException::new(format!("Cannot find provider for root {}", root.display()))
                 })?
                 .clone();
             let data = provider.read_first_block(&root, &requirements)?;

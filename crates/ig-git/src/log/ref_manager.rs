@@ -158,14 +158,16 @@ impl GitRefManager {
         }
         ref_type
     }
+}
 
-    /// Sorts `refs` in label order (the order of [`VcsLogRefManager::labels_order_compare`]).
+impl VcsLogRefManager for GitRefManager {
+    /// Sorts `refs` in label order (the order of `labels_order_compare`).
     ///
     /// The current branch of every involved root is read once, before sorting, so the comparator
     /// stays a consistent total order even if [`GitRepositoryManager::update`] runs on another
     /// thread meanwhile (an inconsistent comparator may make `sort_by` panic or garble the order).
     /// Gives the same order as sorting with `labels_order_compare` when the state does not change.
-    pub fn sort_labels(&self, refs: &mut [VcsRef]) {
+    fn sort_labels(&self, refs: &mut [VcsRef]) {
         let mut current: HashMap<VcsRoot, Option<String>> = HashMap::new();
         for r in refs.iter() {
             if !current.contains_key(r.root()) {
@@ -182,15 +184,13 @@ impl GitRefManager {
             compare_refs(&LABEL_ORDER, |r| self.label_ref_type(r, &is_current), a, b)
         });
     }
-}
 
-impl VcsLogRefManager for GitRefManager {
     fn branch_layout_compare(&self, ref1: &VcsRef, ref2: &VcsRef) -> Ordering {
         compare_refs(&BRANCH_LAYOUT_ORDER, base_ref_type, ref1, ref2)
     }
 
     /// Reads the live repository state on every call. To sort many refs while a refresh may run
-    /// concurrently, use [`GitRefManager::sort_labels`], which snapshots the current branches
+    /// concurrently, use [`VcsLogRefManager::sort_labels`], which snapshots the current branches
     /// first. `branch_layout_compare` does not depend on the current branch (only on ref type and
     /// name), so it needs no snapshot.
     fn labels_order_compare(&self, ref1: &VcsRef, ref2: &VcsRef) -> Ordering {

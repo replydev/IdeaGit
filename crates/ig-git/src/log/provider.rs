@@ -45,7 +45,7 @@ const USER_NAME: &str = "user.name";
 const USER_EMAIL: &str = "user.email";
 
 fn vcs_error(e: GitError) -> VcsException {
-    VcsException(e.to_string())
+    VcsException::new(e.to_string())
 }
 
 /// The git [`VcsLogProvider`] (`GitLogProvider`). One provider serves all git roots.
