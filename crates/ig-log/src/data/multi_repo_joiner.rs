@@ -3,8 +3,14 @@
 //! Ported from `platform/vcs-log/impl/src/com/intellij/vcs/log/data/VcsLogMultiRepoJoiner.java`.
 //!
 //! Each log keeps its own (topological) order; at each step the newest of the next commits of all
-//! logs is taken. Deviation: ties go to the last log with that timestamp in the given order
-//! (upstream: the last in `HashMap` iteration order).
+//! logs is taken.
+//!
+//! Deviations:
+//! - Commits with the same hash in different logs are all kept. Upstream keys its iterator map by
+//!   commit, whose equality is by hash, so it silently drops one log's iterator.
+//! - Timestamp ties go to the later log in the caller's order (upstream: the last in `HashMap`
+//!   iteration order). The refresher passes roots in `VcsRoot` (`Path`) order, which is not
+//!   `compare_roots` string order.
 
 use crate::graph_commit::GraphCommit;
 

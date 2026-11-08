@@ -4,8 +4,14 @@
 //! `VcsLogJoiner.NewCommitIntegrator` (`VcsLogJoiner.java`).
 //!
 //! Deviation: upstream picks the next commit to integrate from a `HashMap` (iteration order of the
-//! hashes); here it is the first remaining commit in input order, which makes the result
-//! deterministic.
+//! hashes); here it is the first remaining commit in input order. Results equal upstream's when
+//! timestamps are distinct and monotone along parent edges. Otherwise upstream's result depends on
+//! `HashMap` iteration and is nondeterministic, while ours depends deterministically on input
+//! order (e.g. A child of B with timestamps A=1, B=10 and an unrelated C=5: input `[C, A, B]`
+//! gives `[A, B, C]`, but `[A, B, C]` gives `[C, A, B]`).
+//!
+//! Like upstream, insertion is O(n²) (linear scan + `Vec::insert`); it is only used by the refresh
+//! joiner on small batches (~3 s for 100k commits in release).
 
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
