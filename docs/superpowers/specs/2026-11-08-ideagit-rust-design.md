@@ -48,7 +48,7 @@ Slices 2–4 each get their own spec addendum and implementation plan.
 |---|---|---|
 | Language | Rust | User requirement. |
 | UI toolkit | GPUI (+ `gpui-component`) | GPU-rendered and built for editor-class apps (Zed): fast text, virtualized lists, cross-platform. IntelliJ itself draws custom widgets, so a self-drawn toolkit makes close visual fidelity possible. Risk: pre-1.0 API churn, mitigated by pinning the git revision. |
-| Git backend | `git` CLI, like IntelliJ. `gix` only for fast read-only loads (commit graph, refs). | Same behavior, hooks, credential helpers, and config as IntelliJ. Command builders and parsers port almost 1:1, and the Git console is accurate by construction. |
+| Git backend | `git` CLI, like IntelliJ, including the log (`gix` was considered for fast reads, but plain `git log` was fast enough). | Same behavior, hooks, credential helpers, and config as IntelliJ. Command builders and parsers port almost 1:1, and the Git console is accurate by construction. |
 | Port style | Hybrid: logic ported faithfully, platform/UI idiomatic Rust | Logic stays diffable against upstream for fix-porting. Swing/platform idioms don't map to GPUI. |
 | Upstream tracking | Pinned stable branch commit (e.g. `idea/253.x`) + per-module file map | Makes "which upstream fixes affect us" a mechanical query. |
 | Window model | IDE-like: welcome screen, one window per opened folder, tool windows docked around a central editor/diff area | Matches IntelliJ. |
@@ -73,7 +73,7 @@ Slices 2–4 each get their own spec addendum and implementation plan.
 IdeaGit/                     (Cargo workspace)
 ├── crates/
 │   ├── ig-git/              # git CLI runner, console events, askpass server, parsers,
-│   │                        # repository model/reader/updater, repo detection, gix fast reads
+│   │                        # repository model/reader/updater, repo detection, git log provider
 │   ├── ig-vcs/              # change model: status, changelists, line status / partial-commit tracking
 │   ├── ig-log/              # commit data, filters, graph (faithful port of vcs-log/graph)
 │   ├── ig-diff/             # comparison algorithms (ByLine/ByWord), fragments; later 3-way merge
@@ -153,8 +153,9 @@ Paths are relative to `intellij-community/`. Every item gets an entry in `upstre
 
 ### Git Log
 
-- **Data:** initial graph and refs load via `gix`. Details and filtered queries via `git log`, using
-  IntelliJ's format and parsing (`GitLogProvider`, `GitLogUtil`, `GitLogParser`, `GitLogRecord`).
+- **Data:** commits, refs and metadata are loaded via `git log`, using IntelliJ's format and parsing
+  (`GitLogProvider`, `GitLogUtil`, `GitLogParser`, `GitLogRecord`), as upstream does. `gix` is not needed
+  for this: in Plan 2c a full load of 50k commits took about 240 ms, almost all of it in `git log` itself.
   Filters (branch, user, date, path, text/regex, hash) follow `VcsLogFilterer` /
   `VcsLogFilterCollection` semantics.
 - **Graph:** faithful port of `platform/vcs-log/graph` (`PermanentGraphImpl`, `GraphLayoutBuilder`,

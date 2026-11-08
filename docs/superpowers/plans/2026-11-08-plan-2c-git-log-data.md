@@ -90,7 +90,7 @@ There is also an `#[ignore]`d performance smoke test on a synthetic repository o
   - `refresh(&roots)` returns an `Arc<VcsLogGraphData>`.
 - **Commits and refs:**
   - Graph commit ids are storage indexes, and `storage.get_commit_id(i)` returns (hash, root).
-  - Labels come from `refs_model.refs_to_commit(i)`, sorted with `labels_order_compare`.
+  - Labels come from `refs_model.refs_to_commit(i)`, sorted with `VcsLogRefManager::sort_labels`. It snapshots the current branch once per sort, so a concurrent `update()` can't make Rust's sort panic. Don't call `sort_by(labels_order_compare)` directly.
   - Branch colors are Java string hash codes, which the UI maps onto a palette.
 - **Threading:**
   - Run all refresher calls on one background worker. The provider, storage and refs model are `Send + Sync`.
