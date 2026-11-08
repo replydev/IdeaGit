@@ -121,7 +121,7 @@ impl<Id: Eq + Hash> ContainedInBranchCondition<Id> {
 /// Created once per repository, kept until the log is refreshed. Contains all commits of the log
 /// and may occupy a lot of memory.
 pub trait PermanentGraph<Id> {
-    type Visible: VisibleGraph<Id>;
+    type Visible: VisibleGraph<Id> + Send;
 
     /// Creates a visible graph. `heads_of_visible_branches == None` means all branches are visible;
     /// `matched_commits == None` means all commits are visible.

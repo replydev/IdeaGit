@@ -7,7 +7,8 @@ use ig_log::utils::dfs_util::DfsWalk;
 use ig_log::utils::flags::BitSetFlags;
 use ig_log::utils::java_sort;
 
-/// Not a strict weak order: odd/even mixture that is not transitive.
+/// Not a strict weak order: compares `a % 3` and `b % 3` cyclically (0 < 1 < 2 < 0), which is
+/// not transitive.
 fn inconsistent(a: &i32, b: &i32) -> Ordering {
     match (a % 3, b % 3) {
         (x, y) if x == y => Ordering::Equal,

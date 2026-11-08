@@ -79,8 +79,11 @@ pub struct GraphAnswer<Id> {
 
 /// Handles user actions on a visible graph.
 pub trait ActionController<Id> {
-    /// The element must come from this visible graph's current `print_elements`; stale elements
-    /// are ignored (deviation: upstream throws).
+    /// The element must come from this visible graph's current `print_elements`.
+    /// Arrow elements whose node indexes are out of range, or whose not-loaded target is unknown,
+    /// are ignored (deviation: upstream throws). A stale element that is still in range acts on
+    /// whatever node now has that index, so drop hovered/selected elements when the visible graph
+    /// is replaced.
     fn perform_action(&mut self, graph_action: GraphAction) -> GraphAnswer<Id>;
 
     fn are_long_edges_hidden(&self) -> bool;

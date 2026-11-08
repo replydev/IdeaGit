@@ -308,6 +308,11 @@ impl<CommitId: 'static> VisibleGraph<CommitId> for VisibleGraphImpl<CommitId> {
         &self,
         visible_row: VcsLogVisibleGraphIndex,
     ) -> Box<dyn RowInfo<CommitId> + '_> {
+        let count = self.visible_commit_count();
+        assert!(
+            (0..count).contains(&visible_row),
+            "get_row_info: visible row {visible_row} is out of range 0..{count}"
+        );
         let node_id = self
             .graph_controller
             .compiled_graph()

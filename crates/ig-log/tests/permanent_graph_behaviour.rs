@@ -295,3 +295,23 @@ fn stale_arrow_elements_are_ignored() {
     );
     let _ = &mut big;
 }
+
+fn two_row_graph() -> impl VisibleGraph<String> {
+    permanent_graph("x0|-x1\nx1|-\n", &[])
+        .create_visible_graph(Options::DEFAULT, None, None)
+        .unwrap()
+}
+
+#[test]
+#[should_panic(expected = "out of range")]
+fn get_row_info_negative_row_panics() {
+    let graph = two_row_graph();
+    let _ = graph.get_row_info(-1);
+}
+
+#[test]
+#[should_panic(expected = "out of range")]
+fn get_row_info_row_equal_to_count_panics() {
+    let graph = two_row_graph();
+    let _ = graph.get_row_info(graph.visible_commit_count());
+}
