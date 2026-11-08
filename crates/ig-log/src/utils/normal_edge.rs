@@ -3,6 +3,8 @@
 //! Ported from `platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/NormalEdge.java`.
 
 /// Up and down node indexes of a normal edge.
+///
+/// `PartialOrd`/`Ord` are IdeaGit additions, for use in ordered sets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NormalEdge {
     pub up: i32,

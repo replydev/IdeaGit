@@ -4,8 +4,9 @@
 //! Ported from `platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/permanent/GraphLayoutBuilder.kt`.
 //!
 //! Deviations: `branches` is an ordered slice (upstream: a `Set`, iterated in hash order before the
-//! stable sort, so it only matters for heads the comparator considers equal). The comparator cannot
-//! throw, so upstream's `sortCatching` is a plain (Java-compatible) stable sort.
+//! stable sort, so it only matters for heads the comparator considers equal). Upstream's
+//! `IntArrayList.sort` is fastutil `stableSort`; here it is [`java_sort`], a stable sort. Upstream's
+//! `sortCatching` logs comparator exceptions and continues, while Rust panics propagate.
 
 use std::cmp::Ordering;
 use std::collections::HashSet;

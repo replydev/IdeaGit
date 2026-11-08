@@ -2,9 +2,10 @@
 //!
 //! Ported from `platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/DfsUtil.kt`.
 //!
-//! Upstream quirk kept: when the consumer of [`DfsWalk::walk`] returns `false`, only the walk from
-//! the current start node stops; the remaining start nodes are still walked, and the stack keeps the
-//! nodes left over from the interrupted walk.
+//! Upstream quirk kept, early exit of [`DfsWalk::walk`]: if the consumer returns `false` on a start
+//! node, the whole walk ends. If it returns `false` on a descendant, only that start node's walk
+//! ends, the remaining start nodes are still walked, and the stack is left stale (it keeps the nodes
+//! of the interrupted walk, which the next start node's walk then resumes).
 
 use crate::api::linear_graph::{LiteLinearGraph, NodeFilter};
 use crate::utils::flags::Flags;

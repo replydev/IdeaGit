@@ -231,7 +231,11 @@ tests = ["platform/vcs-log/graph/test/com/intellij/vcs/log/graph/utils/IntIntMul
 [modules."ig-log::utils::java_sort"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
 upstream = []
-deviations = ["IdeaGit helper replacing java.util.TimSort / fastutil stable sort: exact TimSort small-array path below 32 elements, stable merge sort above (identical for consistent comparators); never panics on inconsistent comparators"]
+deviations = [
+  "IdeaGit helper replacing java.util.TimSort (Collections.sort, print element generator) / fastutil stableSort (IntArrayList.sort, layout builder): exact TimSort small-array path below 32 elements, stable merge sort above; never panics on inconsistent comparators",
+  "Consistent comparators (strict weak orders): result identical to any stable sort, including TimSort and fastutil stableSort",
+  "Inconsistent comparators: matches TimSort exactly below 32 elements; at 32 and above it can differ from Java, and Java may throw 'Comparison method violates its general contract'",
+]
 
 [modules."ig-log::utils::bounded_cache"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
@@ -300,7 +304,7 @@ tests = [
   "platform/vcs-log/graph/testData/edgesInRow",
 ]
 deviations = [
-  "BTreeSet instead of HashSet (deterministic order)",
+  "BTreeSet instead of HashSet (deterministic order); the print generator's edge comparator is not a strict weak order, so ties can resolve differently from IntelliJ in rare rows (mostly rows with not-loaded commit edges) and positions there can differ",
   "BoundedCache instead of SLRUMap",
   "Upstream limitation kept: an edge spanning more than about 2 * walk_size rows is not reported for rows far from both of its ends; get_edges_in_row is not an exact edge index",
 ]
@@ -339,6 +343,8 @@ tests = [
 deviations = [
   "Owns its presentation manager (upstream shares it with VisibleGraphImpl)",
   "BoundedCache instead of SLRUMap",
+  "Upstream bug fixed: recommended_width clamps the variance with max(0.0) before sqrt; upstream returns 0 for linear histories (negative variance, sqrt is NaN, NaN rounds to 0)",
+  "In-row edges arrive in BTreeSet order instead of Java HashSet order; the edge comparator is not a strict weak order, so ties can resolve differently from IntelliJ in rare rows (mostly rows with not-loaded commit edges) and positions there can differ",
 ]
 
 [modules."ig-log::collapsing::edge_storage"]

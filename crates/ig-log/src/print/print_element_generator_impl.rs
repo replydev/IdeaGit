@@ -7,7 +7,12 @@
 //! their ends, with arrows at the cut. Deviations: the generator owns its presentation manager
 //! (upstream shares it with `VisibleGraphImpl`; reach it with
 //! [`presentation_manager_mut`](PrintElementGeneratorImpl::presentation_manager_mut)), and the
-//! row cache is a [`BoundedCache`].
+//! row cache is a [`BoundedCache`]. `recommended_width` clamps the variance at 0 (upstream bug:
+//! linear histories give NaN, hence 0).
+//!
+//! The in-row edge comparator is not a strict weak order. In-row edges arrive in `BTreeSet` order
+//! instead of Java `HashSet` order, so ties can resolve differently from IntelliJ in rare rows,
+//! mostly rows with not-loaded commit edges. Positions there can differ.
 
 use std::cell::{OnceCell, RefCell};
 use std::cmp::Ordering;
@@ -206,8 +211,10 @@ impl<P: PrintElementPresentationManager> PrintElementGeneratorImpl<P> {
         // weighted variance, see
         // http://stackoverflow.com/questions/30383270/how-do-i-calculate-the-standard-deviation-between-weighted-measurements
         let average = sum;
-        let deviation = (sum_squares - average * average).sqrt();
-        // `Math.round`; NaN becomes 0 in both languages
+        // Clamped at 0: rounding can make the variance a tiny negative number (e.g. in a linear
+        // history), and `sqrt` of that is NaN, which rounds to 0. Upstream has this bug.
+        let deviation = (sum_squares - average * average).max(0.0).sqrt();
+        // `Math.round`
         (average + deviation).round() as i32
     }
 

@@ -311,7 +311,8 @@ mod tests {
         assert!(graph.get_children(&"a".to_string()).is_empty());
         assert!(graph.get_containing_branches(&unknown).is_empty());
         assert!(graph.get_containing_branches(&"a".to_string()).is_empty());
-        let _ = graph.get_contained_in_branch_condition(&[unknown]);
+        let condition = graph.get_contained_in_branch_condition(std::slice::from_ref(&unknown));
+        assert!(!condition.test(&unknown));
         assert_eq!(graph.get_children(&"b".to_string()), vec!["c".to_string()]);
     }
 }

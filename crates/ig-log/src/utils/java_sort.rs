@@ -1,11 +1,18 @@
 //! A stable sort that tolerates inconsistent comparators, like Java's `Collections.sort`.
 //!
-//! IdeaGit helper, no direct upstream file. Upstream sorts with `java.util.TimSort` (and fastutil's
-//! stable merge sort for `IntArrayList`). Some comparators of the graph (e.g.
+//! IdeaGit helper, no direct upstream file. Upstream sorts with `java.util.TimSort`
+//! (`Collections.sort`, used by the print element generator) and fastutil's `stableSort`
+//! (`IntArrayList.sort`, used by the layout builder). Some comparators of the graph (e.g.
 //! `GraphElementComparatorByLayoutIndex`) are not total orders, and Rust's `slice::sort_by` may panic
 //! on those. For fewer than 32 elements this is an exact port of TimSort's small-array path
 //! (`countRunAndMakeAscending` + `binarySort`), so ties and inconsistencies resolve like upstream;
-//! longer slices use a stable merge sort, which matches TimSort for every consistent comparator.
+//! longer slices use a stable merge sort.
+//!
+//! For consistent comparators (strict weak orders) the result is identical to any stable sort,
+//! including TimSort and fastutil's `stableSort`. For inconsistent comparators it matches TimSort
+//! exactly below 32 elements and uses a plain stable merge sort otherwise; at 32 elements and above
+//! it can differ from Java, and Java may even throw "Comparison method violates its general
+//! contract".
 
 use std::cmp::Ordering;
 

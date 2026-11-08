@@ -57,7 +57,7 @@ impl IntIntMultiMap {
         self.key_to_array_map.contains_key(&key)
     }
 
-    /// Keys in unspecified order.
+    /// Keys in unspecified order; callers must not depend on it.
     pub fn keys(&self) -> Vec<i32> {
         self.key_to_array_map.keys().copied().collect()
     }
