@@ -5,7 +5,10 @@
 //! ` `=unmodified, M=modified, A=added, D=deleted, R=renamed, C=copied, T=type changed,
 //! U=unmerged, ?=untracked, !=ignored. See the upstream file for the full table.
 //!
-//! Not ported: splitting very long path lists into chunks (`GitUtil.createHandlerWithPaths`).
+//! Not ported yet: splitting very long path lists into chunks (`GitUtil.createHandlerWithPaths`),
+//! the single-file `getFileStatus(root, filePath, executable)` / `getFilePath`, and the
+//! `LightFileStatus.Blank`/`NotChanged` variants (they arrive with the change model).
+//! `files` passed to [`get_file_status`] must be absolute paths under `root`.
 
 use std::path::{Path, PathBuf};
 
@@ -111,9 +114,12 @@ fn is_known_status(status: char) -> bool {
     )
 }
 
+/// Upstream `throwGFE` with `status.exception.message.format.message.xstatus.ystatus.line.output`.
 fn parse_error(message: &str, output: &str, line: &str, x: char, y: char) -> GitError {
     GitError::StatusParse {
-        message: format!("{message}\noutput:\n{output}"),
+        message: format!(
+            "{message} xStatus=[{x}], yStatus=[{y}], line=[{line}]\noutput:\n{output}"
+        ),
         x,
         y,
         line: line.to_string(),
@@ -131,7 +137,7 @@ pub fn parse_git_status_output(output: &str) -> Result<Vec<StatusRecord>> {
         if line.starts_with("starting fsmonitor-daemon in ") {
             continue; // debug output from git-for-windows 2.33
         }
-        if line.chars().count() < 4 || line.as_bytes().get(2) != Some(&b' ') {
+        if line.chars().count() < 4 || line.chars().nth(2) != Some(' ') {
             return Err(parse_error("The line is too short", output, line, '0', '0'));
         }
         let mut chars = line.chars();
@@ -323,6 +329,23 @@ mod tests {
         assert_eq!(
             status_parameters(&old, opts),
             ["--porcelain", "-z", "--untracked-files=all", "--ignored"]
+        );
+    }
+
+    #[test]
+    fn conflict_rules_and_error_format() {
+        assert!(is_conflicted('T', 'T'));
+        assert!(is_conflicted('U', 'A'));
+        assert!(is_conflicted('D', 'U'));
+        assert!(!is_conflicted('D', ' '));
+        assert!(is_intended_to_be_added(' ', 'A'));
+        assert!(!rec('?', '?', "a", None).is_tracked());
+        let err = parse_git_status_output("ZZ a.txt").unwrap_err().to_string();
+        assert!(
+            err.starts_with(
+                "Unexpected symbol as status xStatus=[Z], yStatus=[Z], line=[ZZ a.txt]\noutput:\n"
+            ),
+            "{err}"
         );
     }
 }

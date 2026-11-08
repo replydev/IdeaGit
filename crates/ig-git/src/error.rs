@@ -9,7 +9,8 @@ pub enum GitError {
     Command(String),
     #[error("unsupported format of git --version output: {0:?}")]
     VersionParse(String),
-    #[error("{message} (X={x:?}, Y={y:?}, line={line:?})")]
+    /// `message` is the full upstream-formatted text; `x`, `y`, `line` are kept for callers.
+    #[error("{message}")]
     StatusParse {
         message: String,
         x: char,
