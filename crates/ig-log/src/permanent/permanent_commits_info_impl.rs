@@ -10,6 +10,7 @@
 //!   map"), so they are O(1) per commit instead of O(rows). Results are unchanged, including for
 //!   duplicate commit ids: `get_node_id` returns the first row, `convert_to_node_ids` every row.
 
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
@@ -60,7 +61,8 @@ pub struct PermanentCommitsInfoImpl<CommitId> {
     node_ids: HashMap<CommitId, i32>,
     /// Commit id -> the rows after the first, for commit ids listed more than once (normally empty).
     duplicate_node_ids: HashMap<CommitId, Vec<i32>>,
-    /// Commit id -> its not-loaded id (each not-loaded commit gets exactly one id).
+    /// Commit id -> its not-loaded id. The graph generator guarantees each not-loaded commit gets
+    /// exactly one id (checked by a `debug_assert` in `new_instance`).
     not_loaded_node_ids: HashMap<CommitId, i32>,
 }
 
@@ -76,19 +78,27 @@ impl<CommitId: Clone + Eq + Hash + Send + Sync> PermanentCommitsInfoImpl<CommitI
         let mut duplicate_node_ids: HashMap<CommitId, Vec<i32>> = HashMap::new();
         for (row, commit) in graph_commits.iter().enumerate() {
             rows_mapping.add(commit.id().clone(), commit.timestamp());
-            if node_ids.contains_key(commit.id()) {
-                duplicate_node_ids
-                    .entry(commit.id().clone())
-                    .or_default()
-                    .push(row as i32);
-            } else {
-                node_ids.insert(commit.id().clone(), row as i32);
+            match node_ids.entry(commit.id().clone()) {
+                Entry::Vacant(slot) => {
+                    slot.insert(row as i32);
+                }
+                Entry::Occupied(slot) => {
+                    duplicate_node_ids
+                        .entry(slot.key().clone())
+                        .or_default()
+                        .push(row as i32);
+                }
             }
         }
         let not_loaded_node_ids = not_loaded_commits
             .iter()
             .map(|(&node_id, commit_id)| (commit_id.clone(), node_id))
-            .collect();
+            .collect::<HashMap<CommitId, i32>>();
+        debug_assert_eq!(
+            not_loaded_node_ids.len(),
+            not_loaded_commits.len(),
+            "each not-loaded commit must have exactly one id"
+        );
         PermanentCommitsInfoImpl {
             rows_mapping,
             not_loaded_commits,
@@ -208,5 +218,85 @@ impl<CommitId: Clone + Eq + Hash + Send + Sync> PermanentCommitsInfo<CommitId>
 
     fn convert_to_node_ids(&self, commit_ids: &HashSet<CommitId>) -> HashSet<VcsLogGraphNodeId> {
         self.convert_to_node_ids_skipping(commit_ids, false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct C(&'static str);
+
+    impl GraphCommit<&'static str> for C {
+        fn id(&self) -> &&'static str {
+            &self.0
+        }
+        fn parents(&self) -> &[&'static str] {
+            &[]
+        }
+        fn timestamp(&self) -> i64 {
+            0
+        }
+    }
+
+    fn info(
+        loaded: &[&'static str],
+        not_loaded: &[(i32, &'static str)],
+    ) -> PermanentCommitsInfoImpl<&'static str> {
+        let commits: Vec<C> = loaded.iter().map(|&id| C(id)).collect();
+        PermanentCommitsInfoImpl::new_instance(&commits, not_loaded.iter().copied().collect())
+    }
+
+    fn set<T: Eq + Hash>(items: impl IntoIterator<Item = T>) -> HashSet<T> {
+        items.into_iter().collect()
+    }
+
+    fn standard() -> PermanentCommitsInfoImpl<&'static str> {
+        info(&["a", "b", "a", "c"], &[(-2, "x"), (-3, "y")])
+    }
+
+    #[test]
+    fn get_node_id_returns_first_row_of_duplicate() {
+        assert_eq!(standard().get_node_id(&"a"), 0);
+    }
+
+    #[test]
+    fn convert_to_node_ids_returns_every_duplicate_row() {
+        assert_eq!(standard().convert_to_node_ids(&set(["a"])), set([0, 2]));
+    }
+
+    #[test]
+    fn get_node_id_not_loaded_and_unknown() {
+        let info = standard();
+        assert_eq!(info.get_node_id(&"x"), -2);
+        assert_eq!(info.get_node_id(&"zzz"), -1);
+    }
+
+    #[test]
+    fn convert_to_node_ids_mixed_and_skipping() {
+        let info = standard();
+        let ids = set(["x", "b"]);
+        assert_eq!(info.convert_to_node_ids(&ids), set([1, -2]));
+        assert_eq!(info.convert_to_node_ids_skipping(&ids, true), set([1]));
+        assert_eq!(info.convert_to_node_ids_skipping(&ids, false), set([1, -2]));
+    }
+
+    #[test]
+    fn contains_all_checks_loaded_commits_only() {
+        let info = standard();
+        assert!(info.contains_all([&"a", &"a", &"b"]));
+        assert!(!info.contains_all([&"a", &"x"]));
+        assert!(info.contains_all([]));
+    }
+
+    #[test]
+    fn commit_both_loaded_and_not_loaded() {
+        let info = info(&["b"], &[(-4, "b")]);
+        assert_eq!(info.get_node_id(&"b"), 0);
+        assert_eq!(info.convert_to_node_ids(&set(["b"])), set([0, -4]));
+        assert_eq!(
+            info.convert_to_node_ids_skipping(&set(["b"]), true),
+            set([0])
+        );
     }
 }
