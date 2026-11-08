@@ -533,7 +533,7 @@ deviations = [
 
 [modules."ig-git::log::repository_manager"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
-upstream = ["plugins/git4idea/backend/src/repo/GitRepositoryManager.kt", "plugins/git4idea/backend/src/repo/GitRepositoryImpl.kt#update"]
+upstream = ["plugins/git4idea/backend/src/repo/GitRepositoryManager.java", "plugins/git4idea/backend/src/repo/GitRepositoryImpl.kt#update"]
 deviations = [
   "Minimal stand-in: per-root GitBranchState, remotes and hash length (extensions.objectformat)",
   "State is updated explicitly by callers (no VFS events); fresh (empty) roots are re-read on access so their first commits appear",
@@ -562,7 +562,7 @@ deviations = [
 
 [modules."ig-log::data::hash"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
-upstream = ["platform/vcs-log/api/src/com/intellij/vcs/log/Hash.java", "platform/vcs-impl/shared/src/com/intellij/vcs/log/impl/HashImpl.java"]
+upstream = ["platform/vcs-api/shared/src/com/intellij/vcs/log/Hash.java", "platform/vcs-impl/shared/src/com/intellij/vcs/log/impl/HashImpl.java"]
 deviations = ["Separate from ig_git::hash::Hash (converted at the provider boundary); try_build returns an error instead of asserting"]
 
 [modules."ig-log::data::commit"]
@@ -580,7 +580,7 @@ upstream = [
 [modules."ig-log::data::vcs_user"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
 upstream = [
-  "platform/vcs-log/api/src/com/intellij/vcs/log/VcsUser.java",
+  "platform/vcs-api/shared/src/com/intellij/vcs/log/VcsUser.java",
   "platform/vcs-impl/shared/src/com/intellij/vcs/log/impl/VcsUserImpl.kt",
   "platform/vcs-impl/shared/src/com/intellij/vcs/log/util/VcsUserUtil.java",
 ]
