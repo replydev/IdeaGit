@@ -25,6 +25,7 @@ upstream = ["plugins/git4idea/backend/src/commands/GitImplBase.java", "plugins/g
 deviations = [
   "Synchronous std::process execution on the calling thread; callers use a background executor",
   "No root-name prefix in error messages yet (multi-root presentation comes with the UI)",
+  "runCommandWithoutCollectingOutput takes a line-listener closure (GitLineHandlerListener); stdin input is a byte buffer written then closed (setInputProcessor / writeLines)",
 ]
 
 [modules."ig-git::console"]
@@ -294,6 +295,7 @@ tests = [
 deviations = [
   "No Int-specialised storage",
   "get_commit_id panics for an unknown negative id (upstream returns null)",
+  "Plan 2c: get_node_id, convert_to_node_ids and contains_all use hash indexes (commit id -> first row, extra rows of duplicate ids, not-loaded id) instead of linear scans (upstream TODO 'optimize with special map'); results unchanged",
 ]
 
 [modules."ig-log::print::edges_in_row_generator"]
@@ -439,3 +441,267 @@ tests = [
   "platform/vcs-log/graph/testData/testParser",
 ]
 deviations = ["Test support code; asTestGraphString and TestPermanentGraphInfo not ported yet (needed by Plan 2b tests)"]
+
+# ---- Plan 2c: git log data
+
+[modules."ig-git::natural_comparator"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/util/base/src/com/intellij/openapi/util/text/NaturalComparator.java",
+  "plugins/git4idea/shared/src/git4idea/GitReference.kt#REFS_NAMES_COMPARATOR",
+]
+deviations = ["Character case mapping uses Rust's char::to_uppercase/to_lowercase for single-unit results (Java Character.toUpperCase/toLowerCase)"]
+
+[modules."ig-git::log::parser"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["plugins/git4idea/backend/src/history/GitLogParser.java", "plugins/git4idea/backend/src/GitFormatException.java"]
+tests = ["plugins/git4idea/tests/git4idea/history/GitLogParserTest.kt"]
+deviations = [
+  "Lines are processed byte-wise (markers are ASCII control characters), not as UTF-16 chars",
+  "Format errors that upstream logs with LOG.error in parse() are dropped",
+  "Random marker tails use std RandomState instead of ThreadLocalRandom",
+  "Test harness: record hashes are a deterministic 40-hex digest instead of SHA-1 of the Kotlin map; Change assertions go through GitChangesParser.parseChange's path mapping (Change objects not ported)",
+]
+
+[modules."ig-git::log::record"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "plugins/git4idea/backend/src/history/GitLogRecord.java",
+  "plugins/git4idea/backend/src/history/GitLogFullRecord.java",
+  "plugins/git4idea/backend/src/history/GitLogRecordBuilder.kt",
+  "plugins/git4idea/backend/src/history/GitChangeType.java",
+  "plugins/git4idea/backend/src/history/GitChangesParser.java#getChangeType",
+]
+deviations = [
+  "Option values are a fixed array indexed by GitLogOption (upstream Map)",
+  "No setUsedHandler (only used in log messages)",
+  "GitLogFullRecord keeps --name-status entries; getFilePaths(root)/parseChanges (Change objects) are out of scope until commit details",
+  "InternedGitLogRecordBuilder not ported (no path interning)",
+  "commit_time/author_time_stamp return 0 for malformed values (upstream throws); millisecond conversion saturates",
+]
+
+[modules."ig-git::log::unescape"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-impl/src/com/intellij/vcsUtil/VcsFileUtil.java#unescapeGitPath", "plugins/git4idea/backend/src/GitUtil.java#unescapePath"]
+deviations = ["Octal escapes decode as UTF-8 (upstream: default charset)"]
+
+[modules."ig-git::log::splitter"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["plugins/git4idea/backend/src/history/GitLogOutputSplitter.java"]
+deviations = [
+  "run_and_split bundles runCommandWithoutCollectingOutput(...).throwOnError() and reportErrors()",
+  "Keeps the first parse error (upstream keeps the last)",
+]
+
+[modules."ig-git::log::collector"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["plugins/git4idea/backend/src/history/GitLogRecordCollector.java"]
+deviations = [
+  "createEmptyCopy is a closure; errors upstream only logs are kept for take_error, and a missing tree hash counts as different",
+  "Missing commit/parent tree hashes are recorded as errors and the commit skipped (upstream asserts, then may NPE); GitLogUnorderedRecordCollector not ported (compressed details only)",
+]
+
+[modules."ig-git::log::util"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "plugins/git4idea/backend/src/history/GitLogUtil.java",
+  "plugins/git4idea/backend/src/log/GitLogProvider.kt#DONT_CONSIDER_SHA",
+  "plugins/git4idea/backend/src/branch/GitBranchUtil.java#getAllTags",
+]
+tests = ["plugins/git4idea/tests/git4idea/history/GitLogUtilTest.kt"]
+deviations = [
+  "Only timed commits, metadata and refs; readFullDetails*/GitFullDetailsCollector/GitCommitRequirements (changes) are out of scope",
+  "read_timed_commits takes no file paths (filters are out of scope)",
+  "GitLogUtilTest: the two in-scope cases read through metadata instead of full details; the renames and merge-diff cases are out of scope",
+  "git tag -l gets --no-column (upstream breaks with column.ui=always: multi-tag lines become bogus revisions)",
+]
+
+[modules."ig-git::log::ref_manager"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["plugins/git4idea/backend/src/log/GitRefManager.kt"]
+tests = [
+  "plugins/git4idea/tests/git4idea/log/GitBranchComparatorTest.kt",
+  "plugins/git4idea/tests/git4idea/log/GitLabelComparatorTest.kt",
+  "plugins/git4idea/tests/git4idea/log/GitRefManagerTestUtil.kt",
+]
+deviations = [
+  "Ref types carry no colors (UI); compared by name and branch flag instead of identity",
+  "Not ported: groupForTable, groupForBranchFilter (GitRefGroupsTest), favorites, serialize/deserialize",
+  "The current branch comes from ig_git::log::repository_manager",
+  "Adds snapshot-based label sorting (current branch read once per sort): Rust's sort may panic on a comparator whose state changes mid-sort",
+]
+
+[modules."ig-git::log::repository_manager"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["plugins/git4idea/backend/src/repo/GitRepositoryManager.kt", "plugins/git4idea/backend/src/repo/GitRepositoryImpl.kt#update"]
+deviations = [
+  "Minimal stand-in: per-root GitBranchState, remotes and hash length (extensions.objectformat)",
+  "State is updated explicitly by callers (no VFS events); fresh (empty) roots are re-read on access so their first commits appear",
+  "Adds remove/retain_roots; unknown roots get an empty cached state (upstream returns null)",
+]
+
+[modules."ig-git::log::provider"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "plugins/git4idea/backend/src/log/GitLogProvider.kt",
+  "plugins/git4idea/backend/src/log/VcsLogObjectsFactoryExt.kt",
+  "plugins/git4idea/backend/src/GitUserRegistry.java",
+  "plugins/git4idea/backend/src/config/GitConfigUtil.java#getValue",
+]
+tests = [
+  "plugins/git4idea/tests/git4idea/log/GitLogProviderTest.kt",
+  "plugins/git4idea/testFramework/testSrc/git4idea/test/RefParser.java",
+  "plugins/git4idea/tests/git4idea/log/TestVcsRefsSequences.kt",
+]
+deviations = [
+  "Data reading only: readFirstBlock, readAllHashes, readMetadata, getCurrentUser, getCurrentBranch, isFullHash, getReferenceManager",
+  "Not ported: GitLogExperimentalProvider (experimental refs collection), getCommitsMatchingFilter (filter tests), readFullDetails (test full details), getContainingBranches, subscribeToRootRefreshEvents, resolveReference, getVcsRoot, debug data validation",
+  "Branch refs in name order and set-like collections in first-seen order (upstream HashSet order); new unmatched tags are loaded in name order",
+  "Upstream-inherited gap: an existing tag moved outside the first block keeps its old hash until a full reload (add_old_still_existing_tags)",
+]
+
+[modules."ig-log::data::hash"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/api/src/com/intellij/vcs/log/Hash.java", "platform/vcs-impl/shared/src/com/intellij/vcs/log/impl/HashImpl.java"]
+deviations = ["Separate from ig_git::hash::Hash (converted at the provider boundary); try_build returns an error instead of asserting"]
+
+[modules."ig-log::data::commit"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/api/src/com/intellij/vcs/log/TimedVcsCommit.java",
+  "platform/vcs-log/api/src/com/intellij/vcs/log/VcsShortCommitDetails.java",
+  "platform/vcs-log/api/src/com/intellij/vcs/log/VcsCommitMetadata.java",
+  "platform/vcs-log/api/src/com/intellij/vcs/log/CommitId.java",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/impl/TimedVcsCommitImpl.java",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/impl/VcsShortCommitDetailsImpl.java",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/impl/VcsCommitMetadataImpl.java",
+]
+
+[modules."ig-log::data::vcs_user"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/api/src/com/intellij/vcs/log/VcsUser.java",
+  "platform/vcs-impl/shared/src/com/intellij/vcs/log/impl/VcsUserImpl.kt",
+  "platform/vcs-impl/shared/src/com/intellij/vcs/log/util/VcsUserUtil.java",
+]
+deviations = ["Users are not interned (VcsUserRegistryImpl)"]
+
+[modules."ig-log::data::vcs_ref"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/api/src/com/intellij/vcs/log/VcsRef.java",
+  "platform/vcs-log/api/src/com/intellij/vcs/log/VcsRefType.java",
+  "platform/vcs-log/api/src/com/intellij/vcs/log/VcsRefsContainer.kt",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/impl/VcsRefImpl.java",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/data/EmptyRefs.kt",
+]
+deviations = ["VcsRefType has a name instead of a background color; names are not interned"]
+
+[modules."ig-log::data::root"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/impl/src/com/intellij/vcs/log/util/VcsLogUtil.java#compareRoots"]
+deviations = ["Roots are Arc<Path> instead of VirtualFile"]
+
+[modules."ig-log::data::provider"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/api/src/com/intellij/vcs/log/VcsLogProvider.kt",
+  "platform/vcs-log/api/src/com/intellij/vcs/log/VcsLogRefManager.java",
+  "platform/vcs-log/api/src/com/intellij/vcs/log/VcsLogProviderRequirementsEx.java",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/impl/RequirementsImpl.java",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/impl/SimpleLogProviderRequirements.kt",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/impl/LogDataImpl.java",
+]
+deviations = [
+  "Synchronous; readRecentCommits/RefsLoadingPolicy not modelled (readFirstBlock is the default)",
+  "VcsLogRefManager has the two comparators plus name() (upstream toString); grouping, favorites and serialization not ported",
+  "Filters, full details, containing branches and refresh subscriptions not ported",
+]
+
+[modules."ig-log::data::storage"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/data/VcsLogStorage.kt",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/data/InMemoryStorage.java",
+]
+deviations = ["In memory only (no VcsLogStorageImpl); get_commit_indexes interns a commit and its parents under one lock"]
+
+[modules."ig-log::data::refs_model"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/data/RefsModel.kt",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/data/VcsLogRefsOfSingleRootFactory.kt",
+  "platform/vcs-log/api/src/com/intellij/vcs/log/VcsLogAggregatedStoredRefs.kt",
+  "platform/vcs-log/api/src/com/intellij/vcs/log/VcsLogRootStoredRefs.kt",
+]
+deviations = ["get_ref_for_head_commit also caches 'no ref'; takes ref managers instead of providers"]
+
+[modules."ig-log::data::sorter"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/data/VcsLogSorter.java",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/data/VcsLogJoiner.java#NewCommitIntegrator",
+]
+tests = ["platform/vcs-log/impl/test/com/intellij/vcs/log/data/VcsLogSorterTest.java", "platform/vcs-log/impl/test/com/intellij/vcs/log/TimedCommitParser.java"]
+deviations = [
+  "Picks the next start commit in input order (upstream: HashMap order). Results equal upstream for distinct, parent-monotone timestamps; with skewed timestamps ours is deterministic in input order while upstream is nondeterministic",
+  "Insertion is O(n²) like upstream; used only by the refresh joiner on small batches",
+]
+
+[modules."ig-log::data::joiner"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/data/VcsLogJoiner.java",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/data/VcsLogRefreshNotEnoughDataException.java",
+]
+tests = ["platform/vcs-log/impl/test/com/intellij/vcs/log/data/VcsLogJoinerTest.kt"]
+deviations = [
+  "Exceptions are JoinError values; new commits are integrated in first-block order (upstream HashSet order)",
+  "Duplicate ids in the first block: last copy wins everywhere (matches HashMap.put)",
+]
+
+[modules."ig-log::data::multi_repo_joiner"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/impl/src/com/intellij/vcs/log/data/VcsLogMultiRepoJoiner.java"]
+tests = ["platform/vcs-log/impl/test/com/intellij/vcs/log/data/VcsLogMultiRepoJoinerTest.java"]
+deviations = [
+  "Commits with the same hash in different logs are all kept (upstream keys its iterator map by hash-equal commits and drops one log)",
+  "Timestamp ties go to the later log in caller order; the refresher passes roots in VcsRoot (Path) order",
+]
+
+[modules."ig-log::data::graph_color_manager_impl"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/graph/GraphColorManagerImpl.kt",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/graph/HeadCommitsComparator.java",
+]
+deviations = [
+  "Ref managers told apart by Arc identity and ordered by name() (upstream equals/toString); 'no refs at head' not logged",
+  "A ref whose root has no ref manager is treated like a head without a ref (upstream would throw)",
+]
+
+[modules."ig-log::data::graph_data"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/data/VcsLogGraphData.kt",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/data/VcsLogGraphDataFactory.kt",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/data/DataPack.kt",
+]
+deviations = ["No OverlayData; an empty or failed pack has no permanent graph (upstream EmptyPermanentGraph)"]
+
+[modules."ig-log::data::refresher"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/impl/src/com/intellij/vcs/log/data/VcsLogRefresherImpl.kt"]
+tests = [
+  "platform/vcs-log/impl/test/com/intellij/vcs/log/data/VcsLogRefresherTest.kt",
+  "platform/vcs-log/impl/test/com/intellij/vcs/log/impl/TestVcsLogProvider.java",
+]
+deviations = [
+  "Synchronous: no request channel/batching, progress, cancellation, overlay data or tracing; the caller serializes calls on a background thread",
+  "VcsLogRefresherTest: the blocking/cancellation/batching cases (test_first_refresh_waits_for_full_log, test_reinitialize_makes_refresh_cancelled, test_two_immediately_consecutive_refreshes...) don't apply",
+  "Every commit list is checked for unique ids and topological order before building the graph (upstream builds silently); a failing joined log forces a full reload, a failing first block or full log gives an error data pack",
+  "Roots are processed in path order (upstream HashMap order)",
+  "Recent first-block metadata goes to an optional consumer (upstream VcsLogCommitDataConsumer.storeRecentDetails)",
+  "initialize() is idempotent (upstream: lazy job start); refresh() before initialize() initializes and returns that result",
+  "refresh() dedupes roots (BTreeSet, path order), like upstream's rootsToRefresh.toSet()",
+]
