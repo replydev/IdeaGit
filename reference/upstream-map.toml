@@ -64,8 +64,14 @@ upstream = [
 
 [modules."ig-git::config"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
-upstream = ["plugins/git4idea/backend/src/repo/GitConfig.java#parseRemotes"]
-deviations = ["Remotes only; no include/includeIf, no url.insteadOf yet"]
+upstream = [
+  "plugins/git4idea/backend/src/config/GitConfigUtil.java#getValues",
+  "plugins/git4idea/backend/src/repo/GitConfig.kt#read",
+]
+deviations = [
+  "Remotes only; no url.insteadOf substitution, branch tracking, hooks or core settings yet",
+  "Valueless keys (`key\\0`) parse as `true`; upstream's parser merges them into the next record",
+]
 
 [modules."ig-git::branch"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
