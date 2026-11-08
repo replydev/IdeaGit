@@ -7912,7 +7912,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps -p ig-git -p ig-log
 cargo test --all
 for d in $(ls crates/ig-log/tests/fixtures); do diff -rq "$IJ/platform/vcs-log/graph/testData/$d" crates/ig-log/tests/fixtures/$d; done
 ```
-Expected: all clean. `ig-log` runs 4 unit tests plus 7+10+28+12+10+9+6+10+8 integration tests (104 in total), `ig-git` stays at 67, and the fixture diff prints nothing.
+Expected: all clean. `ig-log` runs 142 tests: 104 from this plan's tasks plus 38 added by review follow-ups (`graph_builder_deviations`, `edges_in_row_oracle`, `edge_storage_mutation`, `permanent_graph_behaviour`, `print_element_generator_extra`, `utils_extra` and extra unit tests). `ig-git` stays at 67, and the fixture diff prints nothing.
 
 - [ ] **Step 2: Add the CI doc build for the new crate.** In `.github/workflows/ci.yml`, change `cargo doc --no-deps -p ig-git` to `cargo doc --no-deps -p ig-git -p ig-log`, then commit:
 
