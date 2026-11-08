@@ -61,6 +61,12 @@ impl GitRepoInfo {
 }
 
 /// Caches [`GitRepoInfo`] per root.
+///
+/// Roots are keys as given: they are not normalized, so pass the same `VcsRoot` values
+/// consistently (`/a/b` and `/a/b/` are different roots). An unknown or non-git root gets an
+/// empty cached state (no branch, no remotes). [`GitRepositoryManager::update`] is meant to be
+/// called from a single refresh worker: concurrent updates for one root may leave the older read
+/// cached.
 pub struct GitRepositoryManager {
     git: Arc<Git>,
     repositories: RwLock<HashMap<PathBuf, Arc<GitRepoInfo>>>,
@@ -116,5 +122,21 @@ impl GitRepositoryManager {
             .unwrap_or_else(|e| e.into_inner())
             .insert(root.to_path_buf(), info.clone());
         info
+    }
+
+    /// Drops the cached state of `root` (upstream drops repositories on mapping changes).
+    pub fn remove(&self, root: &Path) {
+        self.repositories
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(root);
+    }
+
+    /// Drops the cached state of every root not in `roots`.
+    pub fn retain_roots<P: AsRef<Path>>(&self, roots: &[P]) {
+        self.repositories
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|root, _| roots.iter().any(|r| r.as_ref() == root.as_path()));
     }
 }

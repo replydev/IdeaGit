@@ -81,6 +81,8 @@ impl Context {
         VcsRef::new(hash.clone(), name, ref_type, self.root.clone())
     }
 
+    /// The `git config` calls are inert for these comparators (neither consults tracking info);
+    /// they are kept for fidelity with the upstream test.
     fn set_up_tracking(&self, refs: &[VcsRef]) {
         for r in refs.iter().filter(|r| r.ref_type() == LOCAL_BRANCH) {
             let local_branch = r.name();

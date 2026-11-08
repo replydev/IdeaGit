@@ -6,11 +6,15 @@
 //! Not ported (UI or other plans): ref groups for the table and the branch filter
 //! (`groupForTable`, `groupForBranchFilter`, tracked groups), favorites, ref type serialization
 //! and the label colors.
+//!
+//! Neither comparator consults branch tracking info (upstream uses it only in `groupForTable`, not
+//! ported).
 
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::sync::Arc;
 
-use ig_log::data::{VcsLogRefManager, VcsRef, VcsRefType, compare_roots};
+use ig_log::data::{VcsLogRefManager, VcsRef, VcsRefType, VcsRoot, compare_roots};
 
 use crate::log::repository_manager::GitRepositoryManager;
 use crate::natural_comparator::natural_compare;
@@ -136,26 +140,47 @@ impl GitRefManager {
         GitRefManager { repository_manager }
     }
 
-    /// `GitLabelComparator.isCurrentBranch`.
-    fn is_current_branch(&self, vcs_ref: &VcsRef) -> bool {
-        let Some(repo) = self
-            .repository_manager
-            .get_repository_for_root_quick(vcs_ref.root())
-        else {
-            return false;
-        };
-        repo.current_branch_name() == Some(vcs_ref.name())
+    /// The current branch name of the repository at `root`, from the cached state.
+    fn current_branch_of(&self, root: &VcsRoot) -> Option<String> {
+        self.repository_manager
+            .get_repository_for_root_quick(root)?
+            .current_branch_name()
+            .map(str::to_string)
     }
 
-    /// `GitLabelComparator.getType`: local branches (including master) that are current.
-    fn label_ref_type(&self, vcs_ref: &VcsRef) -> RefType {
+    /// `GitLabelComparator.getType`: local branches (including master) that are current, where
+    /// `is_current` decides whether a ref is the current branch.
+    fn label_ref_type(&self, vcs_ref: &VcsRef, is_current: &impl Fn(&VcsRef) -> bool) -> RefType {
         let ref_type = base_ref_type(vcs_ref);
-        if (ref_type == RefType::LocalBranch || ref_type == RefType::Master)
-            && self.is_current_branch(vcs_ref)
+        if (ref_type == RefType::LocalBranch || ref_type == RefType::Master) && is_current(vcs_ref)
         {
             return RefType::CurrentBranch;
         }
         ref_type
+    }
+
+    /// Sorts `refs` in label order (the order of [`VcsLogRefManager::labels_order_compare`]).
+    ///
+    /// The current branch of every involved root is read once, before sorting, so the comparator
+    /// stays a consistent total order even if [`GitRepositoryManager::update`] runs on another
+    /// thread meanwhile (an inconsistent comparator may make `sort_by` panic or garble the order).
+    /// Gives the same order as sorting with `labels_order_compare` when the state does not change.
+    pub fn sort_labels(&self, refs: &mut [VcsRef]) {
+        let mut current: HashMap<VcsRoot, Option<String>> = HashMap::new();
+        for r in refs.iter() {
+            if !current.contains_key(r.root()) {
+                current.insert(r.root().clone(), self.current_branch_of(r.root()));
+            }
+        }
+        let is_current = |r: &VcsRef| {
+            current
+                .get(r.root())
+                .and_then(|name| name.as_deref())
+                .is_some_and(|name| name == r.name())
+        };
+        refs.sort_by(|a, b| {
+            compare_refs(&LABEL_ORDER, |r| self.label_ref_type(r, &is_current), a, b)
+        });
     }
 }
 
@@ -164,8 +189,18 @@ impl VcsLogRefManager for GitRefManager {
         compare_refs(&BRANCH_LAYOUT_ORDER, base_ref_type, ref1, ref2)
     }
 
+    /// Reads the live repository state on every call. To sort many refs while a refresh may run
+    /// concurrently, use [`GitRefManager::sort_labels`], which snapshots the current branches
+    /// first. `branch_layout_compare` does not depend on the current branch (only on ref type and
+    /// name), so it needs no snapshot.
     fn labels_order_compare(&self, ref1: &VcsRef, ref2: &VcsRef) -> Ordering {
-        compare_refs(&LABEL_ORDER, |r| self.label_ref_type(r), ref1, ref2)
+        let is_current = |r: &VcsRef| self.current_branch_of(r.root()).as_deref() == Some(r.name());
+        compare_refs(
+            &LABEL_ORDER,
+            |r| self.label_ref_type(r, &is_current),
+            ref1,
+            ref2,
+        )
     }
 
     fn name(&self) -> String {
