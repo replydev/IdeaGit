@@ -51,6 +51,16 @@ So Task 1 adds the complete crate source, which was verified in a prototype. Eac
 - `PermanentCommitsInfoImpl::get_node_id` is an O(n) lookup, as upstream (marked with a TODO there). Plan 2c should add an index and record it as a deviation.
 - `get_children` panics for commits that are not loaded, as upstream does. `ReachableNodes` serializes queries through a `Mutex`.
 
+### From the Task 1 design review
+- **Plan 2b: controller introspection.** Add default methods to `LinearGraphController`, e.g. `delegate()`, `as_any_mut()` and `supports_collapse()`. These replace upstream's downcasts: `isActionSupported` checking `!is FilteredController`, `performActionRecursively` and `GraphModificationUtil`.
+- **Plan 2b: mutation model.** Updaters are `FnOnce + Send + 'static`, and `LinearGraph` is `&self + Send + Sync`. Collapsing and linear-BEK state must therefore live behind `Arc<RwLock<_>>` inside the same `Arc<dyn LinearGraph>`, as `EdgeStorageWrapper` does. Never swap the `Arc` from inside an updater.
+- **UI threading:**
+  - Call `recommended_width()` on the background thread, since it is lazy and samples up to 20k rows.
+  - Run `get_containing_branches` / `get_contained_in_branch_condition` off the UI thread. They do a full DFS under a `Mutex`.
+  - Drop hovered or selected print elements when the visible graph is replaced, because stale indexes can panic.
+- **UI ergonomics:** `action_controller(&mut self)` requires `&mut` even for read-only queries, as upstream. Wrap it in UI helpers. Consider marking internal modules `#[doc(hidden)]`.
+- **Plan 2c:** guarantee unique commit ids (duplicates are accepted silently, as upstream does), and add the node-id index.
+
 ## File structure
 
 ```
@@ -7899,7 +7909,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps -p ig-git -p ig-log
 cargo test --all
 for d in $(ls crates/ig-log/tests/fixtures); do diff -rq "$IJ/platform/vcs-log/graph/testData/$d" crates/ig-log/tests/fixtures/$d; done
 ```
-Expected: all clean. `ig-log` runs 3 unit tests plus 7+10+28+12+10+9+6+10+8 integration tests (103 in total), `ig-git` stays at 67, and the fixture diff prints nothing.
+Expected: all clean. `ig-log` runs 4 unit tests plus 7+10+28+12+10+9+6+10+8 integration tests (104 in total), `ig-git` stays at 67, and the fixture diff prints nothing.
 
 - [ ] **Step 2: Add the CI doc build for the new crate.** In `.github/workflows/ci.yml`, change `cargo doc --no-deps -p ig-git` to `cargo doc --no-deps -p ig-git -p ig-log`, then commit:
 
