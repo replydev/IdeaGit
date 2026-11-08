@@ -8,7 +8,7 @@
 - The VCS-agnostic data layer lives in `ig-log::data`: commit and ref models, in-memory storage interning (root, hash) to dense integer ids, sorter, joiners, the graph-data builder, and a synchronous refresher generic over `VcsLogProvider`.
 - The Git-specific side lives in `ig-git::log`: the parser and records, the output splitter and collector, `GitLogUtil`, `GitRefManager`, a minimal repository manager, and `GitLogProvider`, which implements `VcsLogProvider`.
 - `ig-git` now depends on `ig-log`, mirroring upstream, where `git4idea` depends on the vcs-log API. Only `ig_git::log` imports `ig-log`, so it could move to its own crate mechanically.
-- Graph commit ids are storage indexes (`u32`), as in upstream production.
+- Graph commit ids are storage indexes (`i32`, upstream `Int`), as in upstream production.
 
 **Tech Stack:** Rust 2024, existing workspace dependencies only. Tests run against the real `git` (≥ 2.17), isolated by `Git::with_base_environment`.
 
@@ -103,6 +103,10 @@ There is also an `#[ignore]`d performance smoke test on a synthetic repository o
   - Repository watching that triggers refreshes.
   - Cancellation in the runner.
   - Unifying the two `Hash` types.
+- **From the Task 2 design review:**
+  - Unify `Hash`: move `ig_log::data::Hash` (compact bytes) into a small leaf crate used by both `ig-git` and `ig-log`, mirroring upstream's `vcs-log/api` split, and make `ig_git::hash::Hash::parse` become `try_build`.
+  - Storage interning takes a write lock per commit. Add a read-lock fast path, or intern per root in one batch.
+  - `check_commits` scratch memory grows with the largest interned index.
 - **Refs in the first block:** the initial first block only carries refs on its own commits, as upstream. The full log brings all refs.
 
 ## Why some tests follow their code
