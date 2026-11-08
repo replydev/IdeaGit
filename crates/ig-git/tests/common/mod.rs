@@ -51,6 +51,15 @@ pub fn git_output_with_env(
     args: &[&str],
     env: &[(&str, &str)],
 ) -> std::process::Output {
+    let mut cmd = git_command(dir, args);
+    // explicit variables are set after the removals so they win
+    cmd.envs(env.iter().copied());
+    cmd.output().expect("git is installed")
+}
+
+/// A git command in `dir` with the isolated environment of [`git_output`], for callers that need
+/// to configure the process further (e.g. pipe stdin).
+pub fn git_command(dir: &Path, args: &[&str]) -> Command {
     let mut cmd = Command::new("git");
     cmd.args(args)
         .current_dir(dir)
@@ -63,9 +72,7 @@ pub fn git_output_with_env(
     for v in SCRUBBED_ENV {
         cmd.env_remove(v);
     }
-    // explicit variables are set after the removals so they win
-    cmd.envs(env.iter().copied());
-    cmd.output().expect("git is installed")
+    cmd
 }
 
 /// Applies the same isolation as [`git_output`] (no global/system config, fixed identity) to a

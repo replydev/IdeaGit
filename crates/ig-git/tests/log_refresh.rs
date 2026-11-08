@@ -18,7 +18,7 @@ use ig_git::log::ref_manager::{LOCAL_BRANCH, TAG};
 use ig_log::data::{
     DetailedLogData, InMemoryStorage, LogData, LogProviders, Requirements, TimedVcsCommit,
     VcsCommitMetadata, VcsException, VcsLogGraphData, VcsLogProvider, VcsLogRefManager,
-    VcsLogRefresher, VcsLogStorage, VcsRefsContainer, VcsRoot, VcsUser,
+    VcsLogRefresher, VcsLogStorage, VcsRefsContainer, VcsRoot, VcsUser, vcs_root,
 };
 use ig_log::{GraphCommit, Options, PermanentGraph, VisibleGraph};
 
@@ -153,6 +153,7 @@ fn full_load_snapshot(roots: &[&VcsRoot]) -> Snapshot {
 
 fn assert_refresh_matches_full_load(log: &mut Log, roots: &[&VcsRoot], refreshed: &[&VcsRoot]) {
     let full_reads = log.provider.read_all_hashes_count.load(Ordering::SeqCst);
+    let first_blocks = log.provider.read_first_block_count.load(Ordering::SeqCst);
     let refreshed: Vec<VcsRoot> = refreshed.iter().map(|r| (*r).clone()).collect();
     let pack = log.refresher.refresh(&refreshed);
     assert!(pack.is_full());
@@ -160,6 +161,10 @@ fn assert_refresh_matches_full_load(log: &mut Log, roots: &[&VcsRoot], refreshed
         log.provider.read_all_hashes_count.load(Ordering::SeqCst),
         full_reads,
         "the refresh was joined, not reloaded"
+    );
+    assert!(
+        log.provider.read_first_block_count.load(Ordering::SeqCst) > first_blocks,
+        "a new block was read and joined"
     );
     assert_eq!(
         snapshot(&pack, log.storage.as_ref()),
@@ -340,9 +345,48 @@ fn refresh_of_one_root_in_multi_repo_log() {
     let mut log = new_log(&[&a, &b], 3);
     log.refresher.initialize();
 
+    let blocks = log.provider.read_first_block_count.load(Ordering::SeqCst);
     commit_at(&a, "new.txt", t + 100);
     git(&a, &["tag", "v2"]);
     assert_refresh_matches_full_load(&mut log, &[&a, &b], &[&a]);
+    assert_eq!(
+        log.provider.read_first_block_count.load(Ordering::SeqCst),
+        blocks + 1,
+        "only root a was re-read"
+    );
+}
+
+#[test]
+fn empty_root_in_multi_repo_gets_first_commit() {
+    let tmp = tempfile::tempdir().unwrap();
+    let a = init_repo_at(&tmp.path().join("a"), 1000);
+    linear_history(&a, 1000, 5);
+    let b_dir = tmp.path().join("b");
+    std::fs::create_dir_all(&b_dir).unwrap();
+    // `git init` without commits, on master (via `symbolic-ref`, `init -b` needs git 2.28)
+    git(&b_dir, &["init", "-q"]);
+    git(&b_dir, &["symbolic-ref", "HEAD", "refs/heads/master"]);
+    let b = vcs_root(&b_dir);
+
+    let mut log = new_log(&[&a, &b], 3);
+    log.refresher.initialize();
+    // one full read per root
+    let full_reads = log.provider.read_all_hashes_count.load(Ordering::SeqCst);
+    assert_eq!(full_reads, 2);
+
+    commit_at(&b_dir, "b0.txt", 2000);
+    let pack = log.refresher.refresh(std::slice::from_ref(&b));
+    // Matches upstream joiner semantics: the saved log of `b` is empty, so there is nothing to
+    // join the new commits to, and the refresh falls back to a full reload.
+    assert_eq!(
+        log.provider.read_all_hashes_count.load(Ordering::SeqCst),
+        full_reads + 2,
+        "reloaded: every root is read again"
+    );
+    assert_eq!(
+        snapshot(&pack, log.storage.as_ref()),
+        full_load_snapshot(&[&a, &b])
+    );
 }
 
 #[test]
@@ -362,6 +406,12 @@ fn refresh_beyond_the_recent_block_reloads_everything() {
         log.provider.read_all_hashes_count.load(Ordering::SeqCst),
         2,
         "reloaded"
+    );
+    // 1 from initialize plus 2 join attempts (the recent block, then the larger one)
+    assert_eq!(
+        log.provider.read_first_block_count.load(Ordering::SeqCst),
+        3,
+        "initialize and two failed joins"
     );
     assert_eq!(
         snapshot(&pack, log.storage.as_ref()),

@@ -9,12 +9,12 @@ mod common;
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Stdio};
-use std::sync::Arc;
+use std::process::Stdio;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use common::log_helpers::{commit_at, provider};
-use common::{SCRUBBED_ENV, git};
+use common::{git, git_command};
 use ig_log::data::graph_data::build_data;
 use ig_log::data::refresher::compact_commit;
 use ig_log::data::{
@@ -109,17 +109,14 @@ fn fast_import_stream() -> (String, usize, usize) {
 }
 
 fn generate_repository(dir: &Path) -> (usize, usize) {
-    git(dir, &["init", "-q", "-b", "master"]);
+    // `init -b` needs git 2.28
+    git(dir, &["init", "-q"]);
+    git(dir, &["symbolic-ref", "HEAD", "refs/heads/master"]);
     let (stream, commits, branches) = fast_import_stream();
-    let mut cmd = Command::new("git");
-    cmd.args(["fast-import", "--quiet"])
-        .current_dir(dir)
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .stdin(Stdio::piped());
-    for v in SCRUBBED_ENV {
-        cmd.env_remove(v);
-    }
-    let mut child = cmd.spawn().unwrap();
+    let mut child = git_command(dir, &["fast-import", "--quiet"])
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
     child
         .stdin
         .take()
@@ -127,8 +124,34 @@ fn generate_repository(dir: &Path) -> (usize, usize) {
         .write_all(stream.as_bytes())
         .unwrap();
     assert!(child.wait().unwrap().success());
+    // fast-import leaves loose refs; real clones have packed refs, which changes the cost of
+    // every per-ref git command, so measure against that layout
+    git(dir, &["pack-refs", "--all"]);
     git(dir, &["reset", "-q", "--hard", "master"]);
     (commits, branches)
+}
+
+/// The `git log` of `read_all_hashes`, output discarded.
+fn git_log_alone(dir: &Path) -> Duration {
+    let start = Instant::now();
+    let status = git_command(
+        dir,
+        &[
+            "log",
+            "HEAD",
+            "--branches",
+            "--remotes",
+            "--tags",
+            "--date-order",
+            "--decorate=full",
+            "--pretty=format:%x01%x01%H%x02%x02%P%x02%x02%ct%x02%x02%an%x02%x02%ae%x02%x02%d%x03%x03",
+        ],
+    )
+    .stdout(Stdio::null())
+    .status()
+    .unwrap();
+    assert!(status.success());
+    start.elapsed()
 }
 
 fn ms(d: Duration) -> String {
@@ -150,18 +173,10 @@ fn load_50k_commits() {
     let root = vcs_root(&dir);
     let provider = Arc::new(provider());
 
-    // git alone, same arguments as read_all_hashes, output discarded (warms the caches too)
-    let start = Instant::now();
-    let status = Command::new("git")
-        .args(["log", "HEAD", "--branches", "--remotes", "--tags", "--date-order", "--decorate=full"])
-        .arg("--pretty=format:%x01%x01%H%x02%x02%P%x02%x02%ct%x02%x02%an%x02%x02%ae%x02%x02%d%x03%x03")
-        .current_dir(&dir)
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .stdout(Stdio::null())
-        .status()
-        .unwrap();
-    assert!(status.success());
-    let t_git = start.elapsed();
+    // git alone, same arguments as read_all_hashes: the first run warms the caches, the second
+    // (warm) one is reported
+    git_log_alone(&dir);
+    let t_git = git_log_alone(&dir);
 
     // step by step
     let start = Instant::now();
@@ -217,8 +232,14 @@ fn load_50k_commits() {
     let storage = Arc::new(InMemoryStorage::new());
     let mut refresher = VcsLogRefresher::new(storage.clone(), providers.clone(), 1000);
     let start = Instant::now();
+    let first_pack: Arc<Mutex<Option<Duration>>> = Arc::new(Mutex::new(None));
+    let sink = first_pack.clone();
+    refresher.set_data_pack_handler(move |_pack| {
+        sink.lock().unwrap().get_or_insert(start.elapsed());
+    });
     let full = refresher.initialize();
     let t_initialize = start.elapsed();
+    let t_first_block = first_pack.lock().unwrap().expect("a pack was published");
     assert_eq!(full.commits_count(), commits);
 
     commit_at(&dir, "new.txt", 2_000_000_000);
@@ -228,16 +249,59 @@ fn load_50k_commits() {
     assert_eq!(refreshed.commits_count(), commits + 1);
     assert!(refreshed.is_full() && refreshed.load_error().is_none());
 
-    eprintln!("git log alone (output discarded)      {}", ms(t_git));
+    // ~50 new commits on top of the head (measured: joined within the recent block of 1000,
+    // no full reload)
+    let mut t = 2_000_000_000;
+    for i in 0..50 {
+        t += 10;
+        commit_at(&dir, &format!("many{i}.txt"), t);
+    }
+    let start = Instant::now();
+    let refreshed = refresher.refresh(std::slice::from_ref(&root));
+    let t_refresh_many = start.elapsed();
+    assert_eq!(refreshed.commits_count(), commits + 51);
+    assert!(refreshed.is_full() && refreshed.load_error().is_none());
+
+    // tag-heavy: new lightweight tags on old commits (a fetch of many tags)
+    //
+    // Known upstream limitation: the joiner runs one `git log` per new tag (about 13 ms each with
+    // packed refs), so a fetch of hundreds of tags makes a refresh take seconds.
+    const NEW_TAGS: usize = 50;
+    let old = git(&dir, &["rev-list", "--skip=2000", "--max-count=50", "HEAD"]);
+    let targets: Vec<&str> = old.lines().collect();
+    assert_eq!(targets.len(), NEW_TAGS);
+    for (i, hash) in targets.iter().enumerate() {
+        git(&dir, &["tag", &format!("perf-tag-{i}"), hash]);
+    }
+    let start = Instant::now();
+    let refreshed = refresher.refresh(std::slice::from_ref(&root));
+    let t_refresh_tags = start.elapsed();
+    assert_eq!(refreshed.commits_count(), commits + 51);
+    assert!(refreshed.is_full() && refreshed.load_error().is_none());
+
+    eprintln!("git log alone (warm, discarded)    {}", ms(t_git));
     eprintln!("read_all_hashes (git log + parse)     {}", ms(t_read));
     eprintln!("intern ids + refs model               {}", ms(t_compact));
     eprintln!("build data pack (permanent graph)     {}", ms(t_build));
-    eprintln!("create visible graph                  {}", ms(t_visible));
+    eprintln!("create visible graph (lazy)           {}", ms(t_visible));
     eprintln!("print elements of 1000 rows           {}", ms(t_rows));
     eprintln!(
         "recommended width (width {width:>3})        {}",
         ms(t_width)
     );
+    eprintln!(
+        "time to first block (first pack)      {}",
+        ms(t_first_block)
+    );
     eprintln!("refresher.initialize (block + full)   {}", ms(t_initialize));
     eprintln!("refresher.refresh (1 new commit)      {}", ms(t_refresh));
+    eprintln!(
+        "refresher.refresh (50 new commits)    {}",
+        ms(t_refresh_many)
+    );
+    eprintln!(
+        "refresher.refresh ({NEW_TAGS} new tags)       {}  ({} per tag)",
+        ms(t_refresh_tags),
+        ms(t_refresh_tags / NEW_TAGS as u32)
+    );
 }
