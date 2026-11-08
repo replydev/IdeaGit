@@ -77,13 +77,14 @@ crates/ig-git/
   src/status.rs                    git status porcelain v1 parsing + invocation
   src/repo_files.rs                GitRepositoryFiles, find_git_dir, try_load_file
   src/refs.rs                      packed/loose refs, symbolic resolution, ref-name validation
-  src/config.rs                    remotes from .git/config
+  src/config.rs                    git config values + remotes (git config --null -l)
   src/branch.rs                    GitLocalBranch, GitRemoteBranch, parse_remote_branch
   src/reader.rs                    GitRepositoryReader -> GitBranchState
   src/roots.rs                     detect_roots
   tests/common/mod.rs              real-git test helpers
   tests/runner_integration.rs
   tests/status_integration.rs
+  tests/config_integration.rs
   tests/reader_fixtures.rs         ported GitRepositoryReaderTest
   tests/reader_integration.rs
   tests/fixtures/repo/{example1,symbolic-refs}   upstream test data
@@ -294,8 +295,14 @@ upstream = [
 
 [modules."ig-git::config"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
-upstream = ["plugins/git4idea/backend/src/repo/GitConfig.java#parseRemotes"]
-deviations = ["Remotes only; no include/includeIf, no url.insteadOf yet"]
+upstream = [
+  "plugins/git4idea/backend/src/config/GitConfigUtil.java#getValues",
+  "plugins/git4idea/backend/src/repo/GitConfig.kt#read",
+]
+deviations = [
+  "Remotes only; no url.insteadOf substitution, branch tracking, hooks or core settings yet",
+  "Valueless keys (`key\\0`) parse as `true`; upstream's parser merges them into the next record",
+]
 
 [modules."ig-git::branch"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
@@ -2953,13 +2960,13 @@ git commit -m "feat(ig-git): refs (Ref parsing, symbolic resolution, loose refs,
 ```
 
 ---
-### Task 10: Remotes from `.git/config`
+### Task 10: Remotes via `git config --null -l`
 
 **Files:**
 - Create: `crates/ig-git/src/config.rs`
 - Modify: `crates/ig-git/src/lib.rs`
-
-Upstream target: `$IJ/plugins/git4idea/backend/src/repo/GitConfig.java` (`parseRemotes`). This task ports only what the reader needs (remote names, urls, refspecs). The full `GitConfig` port (includes, `insteadOf`, branch tracking) belongs to Plan 8 (push/pull).
+- Create: `crates/ig-git/tests/config_integration.rs`
+Upstream: `$IJ/plugins/git4idea/backend/src/config/GitConfigUtil.java` (`getValues`) and `$IJ/plugins/git4idea/backend/src/repo/GitConfig.kt` (`read`, `parseSectionNameAndVariable`, `createRemote`, the `urls.isNotEmpty()` filter). Git itself parses the config, so includes, escapes and continuation lines behave exactly as in git. `url.insteadOf`, branch tracking and hooks belong to Plan 8 (push/pull).
 
 - [ ] **Step 1: Write the failing tests**: create `crates/ig-git/src/config.rs` containing only the test module
 
@@ -2969,18 +2976,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_remotes_and_ignores_other_sections() {
-        let cfg = "[core]\n\tbare = false\n[remote \"origin\"]\n\turl = git@h:o.git ; comment\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"master\"]\n\tremote = origin\n[remote \"up\"]\n\turl = \"https://h/u.git\"\n\tpushurl = ssh://h/u.git\n";
-        let remotes = parse_remotes(cfg);
-        assert_eq!(remotes.len(), 2);
-        assert_eq!(remotes[0].name, "origin");
-        assert_eq!(remotes[0].urls, ["git@h:o.git"]);
+    fn parses_null_output_with_multiline_and_valueless_entries() {
+        let out = "core.bare\nfalse\0core.flag\0remote.origin.url\nu1\0remote.origin.url\nu2\0alias.x\nline1\nline2\0";
+        let v = parse_null_config_output(out);
+        assert_eq!(v.get("core.bare"), Some(&["false".to_string()][..]));
+        assert_eq!(v.get("core.flag"), Some(&["true".to_string()][..]));
+        assert_eq!(v.get("remote.origin.url").map(<[String]>::len), Some(2));
+        assert_eq!(v.get("alias.x"), Some(&["line1\nline2".to_string()][..]));
+        assert_eq!(
+            v.keys().collect::<Vec<_>>(),
+            ["core.bare", "core.flag", "remote.origin.url", "alias.x"]
+        );
+    }
+
+    #[test]
+    fn builds_remotes_like_upstream() {
+        let out = "remote.origin.url\ngit@h:o.git\0remote.origin.fetch\n+refs/heads/*:refs/remotes/origin/*\0\
+                   remote.NoUrl.fetch\n+refs/heads/*:refs/remotes/NoUrl/*\0\
+                   remote.team.a.url\nhttps://h/a.git\0remote.team.a.pushurl\nssh://h/a.git\0\
+                   svn-remote.svn.url\nsvn://h/r\0branch.main.remote\norigin\0";
+        let remotes = remotes_from_values(&parse_null_config_output(out));
+        let names: Vec<&str> = remotes.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(
+            names,
+            ["origin", "team.a", "svn"],
+            "url-less remotes are skipped"
+        );
         assert_eq!(
             remotes[0].fetch_refspecs,
             ["+refs/heads/*:refs/remotes/origin/*"]
         );
-        assert_eq!(remotes[1].urls, ["https://h/u.git"]);
-        assert_eq!(remotes[1].push_urls, ["ssh://h/u.git"]);
+        assert_eq!(remotes[1].push_urls, ["ssh://h/a.git"]);
     }
 }
 ```
@@ -3012,15 +3038,24 @@ Expected: FAIL. Compilation errors for the not-yet-defined items (`cannot find .
 - [ ] **Step 3: Implement**: insert this **above** the `#[cfg(test)]` module in `crates/ig-git/src/config.rs`
 
 ```rust
-//! Minimal reader for the `[remote "..."]` sections of `.git/config`, enough for branch parsing.
-//! Port target: `plugins/git4idea/backend/src/repo/GitConfig.java` (`parseRemotes`).
+//! Port of `plugins/git4idea/backend/src/config/GitConfigUtil.java` (`getValues`) and the remote part
+//! of `plugins/git4idea/backend/src/repo/GitConfig.kt` (`read`, `parseSectionNameAndVariable`,
+//! `createRemote`, and the `urls.isNotEmpty()` filter of `mapConfiguredRemotes`).
 //!
-//! Not yet ported: `include`/`includeIf`, `url.<base>.insteadOf`/`pushInsteadOf`, branch tracking info.
-//! These arrive with the push/pull plan.
+//! As upstream, git itself parses the configuration (`git config --null -l`), so includes, escapes,
+//! continuation lines and all config scopes behave exactly as in git.
+//!
+//! Not yet ported: `url.<base>.insteadOf`/`pushInsteadOf` substitution, branch tracking, hooks,
+//! core settings and object format (they arrive with the push/pull plan).
 
 use std::path::Path;
 
+use crate::command::GitCommand;
 use crate::error::Result;
+use crate::runner::Git;
+
+const GIT_REMOTE_SECTION: &str = "remote";
+const SVN_REMOTE_SECTION: &str = "svn-remote";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitRemote {
@@ -3043,91 +3078,108 @@ impl GitRemote {
     }
 }
 
-/// Reads remotes from a git config file. A missing file yields no remotes.
-pub fn read_remotes(config_file: &Path) -> Result<Vec<GitRemote>> {
-    if !config_file.exists() {
-        return Ok(Vec::new());
-    }
-    let content = std::fs::read_to_string(config_file)?;
-    Ok(parse_remotes(&content))
+/// Config values by key, in order of first appearance (upstream uses a `LinkedHashMap`).
+/// Keys are as git prints them: section and variable names lowercased, subsections verbatim.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ConfigValues {
+    entries: Vec<(String, Vec<String>)>,
 }
 
-pub fn parse_remotes(content: &str) -> Vec<GitRemote> {
-    let mut remotes: Vec<GitRemote> = Vec::new();
-    let mut current: Option<usize> = None;
-    for raw in content.lines() {
-        let line = strip_comment(raw).trim();
-        if line.is_empty() {
-            continue;
+impl ConfigValues {
+    pub fn get(&self, key: &str) -> Option<&[String]> {
+        self.entries
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_slice())
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = &str> {
+        self.entries.iter().map(|(k, _)| k.as_str())
+    }
+
+    fn push(&mut self, key: &str, value: &str) {
+        match self.entries.iter_mut().find(|(k, _)| k == key) {
+            Some((_, values)) => values.push(value.to_string()),
+            None => self
+                .entries
+                .push((key.to_string(), vec![value.to_string()])),
         }
-        if line.starts_with('[') {
-            current = None;
-            if let Some((section, Some(sub))) = parse_section_header(line) {
-                if section == "remote" {
-                    let idx = match remotes.iter().position(|r| r.name == sub) {
-                        Some(i) => i,
-                        None => {
-                            remotes.push(GitRemote::new(&sub));
-                            remotes.len() - 1
-                        }
-                    };
-                    current = Some(idx);
-                }
+    }
+}
+
+/// Parses `git config --null` output: records of `key\nvalue\0`.
+///
+/// Deviation: a key printed without value (`key\0`, a valueless boolean) is read as `true`; upstream's
+/// parser would merge it into the next record.
+pub fn parse_null_config_output(output: &str) -> ConfigValues {
+    let mut result = ConfigValues::default();
+    let mut rest = output;
+    while !rest.is_empty() {
+        let Some(nul) = rest.find('\0') else { break };
+        let record = &rest[..nul];
+        match record.split_once('\n') {
+            Some((key, value)) => result.push(key, value),
+            None => result.push(record, "true"),
+        }
+        rest = &rest[nul + 1..];
+    }
+    result
+}
+
+/// Upstream `GitConfigUtil.getValues(project, root, null)`: all values visible from `root`.
+pub fn get_values(git: &Git, root: &Path) -> Result<ConfigValues> {
+    let mut h = git.handler(root, GitCommand::CONFIG);
+    h.set_silent(true);
+    h.add_parameters(["--null", "-l"]);
+    let output = git.run_command(h).output_or_error()?;
+    Ok(parse_null_config_output(&output))
+}
+
+/// Upstream `GitConfig.read(project, root).parseRemotes()` without url substitutions: remotes (and
+/// svn-remotes) that have at least one url. Like upstream, a failure to read the config yields none.
+pub fn read_remotes(git: &Git, root: &Path) -> Vec<GitRemote> {
+    get_values(git, root)
+        .map(|v| remotes_from_values(&v))
+        .unwrap_or_default()
+}
+
+pub fn remotes_from_values(values: &ConfigValues) -> Vec<GitRemote> {
+    let mut sections: Vec<(&str, &str)> = Vec::new();
+    for key in values.keys() {
+        if let Some(sv) = parse_section_name_and_variable(key) {
+            if !sections.contains(&sv) {
+                sections.push(sv);
             }
-            continue;
-        }
-        let Some(idx) = current else { continue };
-        let (key, value) = match line.split_once('=') {
-            Some((k, v)) => (k.trim().to_ascii_lowercase(), unquote(v.trim())),
-            None => (line.to_ascii_lowercase(), "true".to_string()),
-        };
-        let remote = &mut remotes[idx];
-        match key.as_str() {
-            "url" => remote.urls.push(value),
-            "pushurl" => remote.push_urls.push(value),
-            "fetch" => remote.fetch_refspecs.push(value),
-            "push" => remote.push_refspecs.push(value),
-            _ => {}
         }
     }
-    remotes
+    sections
+        .into_iter()
+        .filter(|(section, _)| *section == GIT_REMOTE_SECTION || *section == SVN_REMOTE_SECTION)
+        .map(|(section, name)| create_remote(values, section, name))
+        .filter(|remote| !remote.urls.is_empty())
+        .collect()
 }
 
-/// `[remote "origin"]` → `("remote", Some("origin"))`; `[core]` → `("core", None)`;
-/// deprecated `[remote.origin]` → `("remote", Some("origin"))`.
-fn parse_section_header(line: &str) -> Option<(String, Option<String>)> {
-    let inner = line.strip_prefix('[')?.split(']').next()?.trim();
-    if let Some(q) = inner.find('"') {
-        let section = inner[..q].trim().to_ascii_lowercase();
-        let sub = inner[q + 1..]
-            .trim_end_matches('"')
-            .replace("\\\"", "\"")
-            .replace("\\\\", "\\");
-        return Some((section, Some(sub)));
-    }
-    match inner.split_once('.') {
-        Some((s, sub)) => Some((s.to_ascii_lowercase(), Some(sub.to_ascii_lowercase()))),
-        None => Some((inner.to_ascii_lowercase(), None)),
-    }
+/// `remote.origin.url` → `("remote", "origin")`; `remote.team.a.url` → `("remote", "team.a")`.
+fn parse_section_name_and_variable(key: &str) -> Option<(&str, &str)> {
+    let first = key.find('.')?;
+    let last = key.rfind('.')?;
+    (first != last).then(|| (&key[..first], &key[first + 1..last]))
 }
 
-fn strip_comment(line: &str) -> &str {
-    let mut in_quotes = false;
-    for (i, c) in line.char_indices() {
-        match c {
-            '"' => in_quotes = !in_quotes,
-            '#' | ';' if !in_quotes => return &line[..i],
-            _ => {}
-        }
-    }
-    line
-}
-
-fn unquote(v: &str) -> String {
-    if v.len() >= 2 && v.starts_with('"') && v.ends_with('"') {
-        v[1..v.len() - 1].to_string()
-    } else {
-        v.to_string()
+fn create_remote(values: &ConfigValues, section: &str, name: &str) -> GitRemote {
+    let get = |variable: &str| {
+        values
+            .get(&format!("{section}.{name}.{variable}"))
+            .map(<[String]>::to_vec)
+            .unwrap_or_default()
+    };
+    GitRemote {
+        name: name.to_string(),
+        urls: get("url"),
+        push_urls: get("pushurl"),
+        fetch_refspecs: get("fetch"),
+        push_refspecs: get("push"),
     }
 }
 ```
@@ -3137,11 +3189,64 @@ fn unquote(v: &str) -> String {
 Run: `cargo test -p ig-git --lib config::`
 Expected: PASS (all tests in `config::tests`).
 
+- [ ] **Step 4b: Add the config integration test** `crates/ig-git/tests/config_integration.rs`
+
+```rust
+//! Remote reading through `git config --null -l` against real repositories.
+
+mod common;
+
+use common::{git, init_repo, runner};
+use ig_git::config::read_remotes;
+
+#[test]
+fn reads_remotes_including_included_files_and_case_sensitive_names() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    init_repo(root);
+    git(
+        root,
+        &["remote", "add", "origin", "https://example.com/o.git"],
+    );
+    git(
+        root,
+        &["config", "remote.Upstream.url", "https://example.com/u.git"],
+    );
+    std::fs::write(
+        root.join(".git/extra.config"),
+        "[remote \"inc\"]\n\turl = \"https://example.com/i.git\" ; note\n",
+    )
+    .unwrap();
+    git(root, &["config", "include.path", "extra.config"]);
+
+    let remotes = read_remotes(&runner(), root);
+    let mut names: Vec<&str> = remotes.iter().map(|r| r.name.as_str()).collect();
+    names.retain(|n| ["origin", "Upstream", "inc"].contains(n));
+    names.sort();
+    assert_eq!(names, ["Upstream", "inc", "origin"]);
+    let inc = remotes.iter().find(|r| r.name == "inc").unwrap();
+    assert_eq!(inc.urls, ["https://example.com/i.git"]);
+}
+
+#[test]
+fn unreadable_config_yields_no_remotes() {
+    let g = ig_git::runner::Git::new(
+        "/definitely/not/git",
+        ig_git::version::GitVersion::NULL,
+        std::sync::Arc::new(ig_git::console::NullConsole),
+    );
+    assert!(read_remotes(&g, std::path::Path::new(".")).is_empty());
+}
+```
+
+Run: `cargo test -p ig-git --test config_integration`
+Expected: PASS (2 tests).
+
 - [ ] **Step 5: Commit**
 
 ```bash
 git add crates/ig-git
-git commit -m "feat(ig-git): config (Remotes from `.git/config`)"
+git commit -m "feat(ig-git): config (Remotes via `git config --null -l`)"
 ```
 
 ---
@@ -3357,7 +3462,6 @@ The hidden entries must be present: the reader has to skip them.
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use ig_git::config::read_remotes;
 use ig_git::console::NullConsole;
 use ig_git::reader::GitRepositoryReader;
 use ig_git::repo_files::GitRepositoryFiles;
@@ -3408,8 +3512,9 @@ fn check_case(case: &str) {
     let (_tmp, root) = prepare(case);
     let files = GitRepositoryFiles::create(&root, &root.join(".git"));
     let git = Git::new("git", GitVersion::NULL, Arc::new(NullConsole));
-    let remotes = read_remotes(&files.config_file()).unwrap();
-    let state = GitRepositoryReader::new(&files, &git).read_state(&remotes);
+    // Upstream's test reads remotes from the test project root, which has none: full ref names don't
+    // depend on remote resolution, and unknown remotes fall back to the first path segment.
+    let state = GitRepositoryReader::new(&files, &git).read_state(&[]);
 
     let head = std::fs::read_to_string(root.join("head.txt"))
         .unwrap()
@@ -3480,7 +3585,7 @@ fn read_state(root: &std::path::Path) -> ig_git::reader::GitBranchState {
     let g = runner();
     let git_dir = find_git_dir(root).expect("git dir");
     let files = GitRepositoryFiles::create(root, &git_dir);
-    let remotes = read_remotes(&files.config_file()).unwrap();
+    let remotes = read_remotes(&g, root);
     GitRepositoryReader::new(&files, &g).read_state(&remotes)
 }
 
@@ -4048,14 +4153,14 @@ cargo clippy --all-targets -- -D warnings
 cargo test --all
 ```
 
-Expected: no fmt diff, no clippy warnings, and every test passing: 34 unit tests plus `reader_fixtures` (2), `reader_integration` (2), `runner_integration` (4), `status_integration` (1).
+Expected: no fmt diff, no clippy warnings, and every test passing: 34 unit tests plus `reader_fixtures` (2), `reader_integration` (2), `runner_integration` (4), `status_integration` (1), `config_integration` (2).
 
 - [ ] **Step 2: Push and check CI** (only if a remote exists and the user approved pushing). All three OS jobs must be green, and on Windows the `reader_fixtures` tests must pass with the byte-exact fixtures guaranteed by `.gitattributes`.
 
 ## Not in this plan (by design)
 
 - Hooks info and shallow detection in the reader (Plan 4/8 need them).
-- Full `GitConfig` port: includes, `insteadOf`, branch tracking (Plan 8).
+- Rest of the `GitConfig` port: `insteadOf` substitution, branch tracking, hooks, core settings (Plan 8).
 - Splitting long path lists into chunks for `status` (Plan 4).
 - Askpass and credential handling (Plan 8).
 - Minimum-git CI job (Plan 9).
