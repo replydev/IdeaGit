@@ -3,6 +3,8 @@
 //!
 //! Deviation: names compare case-sensitively; upstream compares case-insensitively on
 //! case-insensitive file systems. `GitRepositoryReader` handles the current-branch case fix.
+//! Deviation: remote branches compare by remote *name* and branch name; upstream also compares the
+//! remote's urls and refspecs. No ordering is defined yet (upstream sorts full names naturally).
 
 use crate::config::GitRemote;
 use crate::refs::{REFS_HEADS_PREFIX, REFS_REMOTES_PREFIX, strip_refs_prefix};
@@ -10,7 +12,7 @@ use crate::refs::{REFS_HEADS_PREFIX, REFS_REMOTES_PREFIX, strip_refs_prefix};
 /// Upstream `GitUtil.ORIGIN_HEAD`.
 pub const ORIGIN_HEAD: &str = "origin/HEAD";
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct GitLocalBranch {
     name: String,
 }
@@ -30,7 +32,7 @@ impl GitLocalBranch {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GitRemoteBranch {
     /// e.g. remote `origin`, name at remote `main` → `origin/main`.
     Standard {
@@ -123,6 +125,26 @@ mod tests {
         assert_eq!(
             parse_remote_branch("refs/remotes/trunk", &remotes).full_name(),
             "refs/remotes/trunk"
+        );
+    }
+
+    #[test]
+    fn shortest_matching_remote_prefix_wins() {
+        let remotes = vec![GitRemote::new("a"), GitRemote::new("a/b")];
+        assert_eq!(
+            parse_remote_branch("refs/remotes/a/b/c", &remotes),
+            GitRemoteBranch::Standard {
+                remote: "a".into(),
+                name_at_remote: "b/c".into()
+            }
+        );
+        assert_eq!(
+            parse_remote_branch("refs/remotes/trunk", &remotes).name(),
+            "trunk"
+        );
+        assert_eq!(
+            GitLocalBranch::new("main"),
+            GitLocalBranch::new("refs/heads/main")
         );
     }
 }
