@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-08-ideagit-rust-design.md` (Git Log section).
 
+> **Note:** the code blocks below reflect the state at Task 1. Review fixes applied during execution (updater API, stale-element guard, edge-storage locking, width clamp, `get_row_info` assert, re-exports, …) live in the crate and in `reference/upstream-map.toml`; the crate is the source of truth.
+
 ---
 
 ## Where this plan fits
@@ -49,7 +51,7 @@ So Task 1 adds the complete crate source, which was verified in a prototype. Eac
 
 - `VisibleGraphImpl` is `Send` but not `Sync` (its caches use `RefCell`), so the UI must own it on one thread. A `RowInfo` borrows the visible graph. Print elements come back with nodes last, so they are drawn over edges. After an action, run any returned `GraphUpdater`.
 - `PermanentCommitsInfoImpl::get_node_id` is an O(n) lookup, as upstream (marked with a TODO there). Plan 2c should add an index and record it as a deviation.
-- `get_children` panics for commits that are not loaded, as upstream does. `ReachableNodes` serializes queries through a `Mutex`.
+- `get_children` returns an empty list for unknown or not-loaded commits (deviation: upstream throws). `ReachableNodes` serializes queries through a `Mutex`.
 
 ### From the Task 1 design review
 - **Plan 2b: controller introspection.** Add default methods to `LinearGraphController`, e.g. `delegate()`, `as_any_mut()` and `supports_collapse()`. These replace upstream's downcasts: `isActionSupported` checking `!is FilteredController`, `performActionRecursively` and `GraphModificationUtil`.
