@@ -107,6 +107,9 @@ There is also an `#[ignore]`d performance smoke test on a synthetic repository o
   - Unify `Hash`: move `ig_log::data::Hash` (compact bytes) into a small leaf crate used by both `ig-git` and `ig-log`, mirroring upstream's `vcs-log/api` split, and make `ig_git::hash::Hash::parse` become `try_build`.
   - Storage interning takes a write lock per commit. Add a read-lock fast path, or intern per root in one batch.
   - `check_commits` scratch memory grows with the largest interned index.
+- **From the Task 4 joiner review (repository watching):**
+  - Force a full reload (not a join) when `.git/shallow`, `.git/info/grafts` or `refs/replace/*` change.
+  - Deepening a shallow clone, grafts and `git replace` change a commit's parents under the same hash. A join silently keeps the old parents when that commit lies deeper than the first block. Upstream has the same limitation.
 - **Refs in the first block:** the initial first block only carries refs on its own commits, as upstream. The full log brings all refs.
 
 ## Why some tests follow their code
