@@ -9,6 +9,8 @@
 //! where new commits are inserted, is rebuilt and the rest is kept as is.
 //!
 //! Deviation: the new commits are integrated in first-block order (upstream: `HashSet` order).
+//! When the first block repeats an id, the last copy wins everywhere (the rebuilt unsafe prefix
+//! and the new commits), like upstream's `HashMap.put`.
 
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
@@ -141,10 +143,10 @@ where
 {
     let existed_commit_hashes: HashSet<&Id> =
         unsafe_green_part_saved_log.iter().map(|c| c.id()).collect();
-    let mut seen = HashSet::new();
+    // Duplicated ids stay: `NewCommitIntegrator::new` keeps the last one, like the unsafe prefix.
     first_block
         .iter()
-        .filter(|c| !existed_commit_hashes.contains(c.id()) && seen.insert(c.id()))
+        .filter(|c| !existed_commit_hashes.contains(c.id()))
         .cloned()
         .collect()
 }

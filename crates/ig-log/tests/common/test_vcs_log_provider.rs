@@ -60,6 +60,11 @@ impl TestVcsLogProvider {
         all.splice(0..0, commits);
     }
 
+    /// IdeaGit addition: replaces the whole history (newest first), e.g. after a rewrite.
+    pub fn set_history(&self, commits: Vec<TimedVcsCommit>) {
+        *self.commits.lock().unwrap() = commits;
+    }
+
     pub fn add_ref(&self, vcs_ref: VcsRef) {
         self.refs.lock().unwrap().insert(vcs_ref);
     }
@@ -83,7 +88,7 @@ impl VcsLogProvider for TestVcsLogProvider {
         self.read_first_block_counter
             .fetch_add(1, AtomicOrdering::SeqCst);
         let commits = self.commits.lock().unwrap();
-        let metadatas = commits[..requirements.commit_count]
+        let metadatas = commits[..requirements.commit_count.min(commits.len())]
             .iter()
             .map(|commit| {
                 VcsCommitMetadata::new(
