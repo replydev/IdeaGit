@@ -52,10 +52,14 @@ Slices 2–4 each get their own spec addendum and implementation plan.
 | Port style | Hybrid: logic ported faithfully, platform/UI idiomatic Rust | Logic stays diffable against upstream for fix-porting. Swing/platform idioms don't map to GPUI. |
 | Upstream tracking | Pinned stable branch commit (e.g. `idea/253.x`) + per-module file map | Makes "which upstream fixes affect us" a mechanical query. |
 | Window model | IDE-like: welcome screen, one window per opened folder, tool windows docked around a central editor/diff area | Matches IntelliJ. |
-| Minimum git | Same as upstream (currently 2.19+) | Same parser assumptions. |
+| Minimum git | Same as upstream: 2.17.0 (2.19.2 on Windows) | Same parser assumptions. |
 
 ## Licensing and branding
 
+- Upstream's root `LICENSE.txt` now holds the "JetBrains Open-Source Build Terms" (v1.3, June 2026), which
+  govern JetBrains' binary builds of IntelliJ IDEA and PyCharm. The source code itself is Apache 2.0 (file
+  headers; the terms themselves say the builds consist of Apache-2.0 software). IdeaGit ports source only and
+  ships the Apache-2.0 text plus upstream's NOTICE contents. *To be confirmed by legal.*
 - `intellij-community` is Apache 2.0. Ported files carry a header crediting the upstream file(s). The
   repository includes the upstream `LICENSE` and a `NOTICE` file listing ported/imported material.
 - Imported assets (themes, icons, strings, keymaps) are Apache 2.0 with the same attribution.
@@ -143,7 +147,7 @@ Paths are relative to `intellij-community/`. Every item gets an entry in `upstre
   `notify`), and `GitUntrackedFilesHolder`. Root detection and multi-repo/worktree discovery follow
   `GitRepositoryManager` / `VcsRootDetector`.
 - **Change model** (`ig-vcs`): port of `GitChangeProvider` / `GitStagingAreaHolder` (`status
-  --porcelain=v2 -z`), `ChangeListManagerImpl` semantics (named changelists, default list, persistence),
+  --porcelain -z`, format v1 as upstream), `ChangeListManagerImpl` semantics (named changelists, default list, persistence),
   and `LineStatusTracker` / `PartialLocalLineStatusTracker` (hunk tracking, editor gutter markers,
   per-hunk inclusion for partial commits).
 
@@ -217,7 +221,7 @@ highlighting for common languages.
 - **UI tests** with GPUI's `TestAppContext` for view logic (popup filtering, tree inclusion, keymap
   dispatch), plus the screenshot harness for visual review.
 - **CI** (GitHub Actions): macOS arm64/x64, Windows x64, Linux x64; `cargo test`, `cargo clippy -D
-  warnings`, `cargo fmt --check`; one job pinned to the minimum supported git version.
+  warnings`, `cargo fmt --check`; one job pinned to the minimum supported git version (added in plan 9).
 
 ## Distribution
 
