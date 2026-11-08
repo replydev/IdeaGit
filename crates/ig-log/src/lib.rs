@@ -51,6 +51,7 @@
 pub mod actions;
 pub mod api;
 pub mod collapsing;
+pub mod data;
 pub mod facade;
 pub mod graph_color_manager;
 pub mod graph_commit;

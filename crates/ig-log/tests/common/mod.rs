@@ -10,6 +10,8 @@
 pub mod parser;
 pub mod str_utils;
 pub mod test_graph_builder;
+pub mod test_vcs_log_provider;
+pub mod timed_commit_parser;
 
 use std::hash::Hash;
 use std::path::PathBuf;
