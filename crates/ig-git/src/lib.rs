@@ -7,4 +7,5 @@ pub mod error;
 pub mod handler;
 pub mod hash;
 pub mod runner;
+pub mod status;
 pub mod version;
