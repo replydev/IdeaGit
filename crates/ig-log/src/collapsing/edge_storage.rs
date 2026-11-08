@@ -15,6 +15,9 @@ const MIN_NODE_ID: i32 = i32::MIN >> EDGE_TYPE_BITS;
 const _: () = assert!(GraphEdgeType::VALUES.len() <= MAX_EDGE_TYPE_COUNT);
 
 /// Normal edges are stored under both node ids; special edges only under their node.
+///
+/// Node ids must fit 28 bits (together with the 4-bit edge type they pack into one `i32`). This is
+/// checked only by `debug_assert`, as with upstream's `assert`.
 #[derive(Clone, Debug, Default)]
 pub struct EdgeStorage {
     edges: IntIntMultiMap,
@@ -29,20 +32,25 @@ impl EdgeStorage {
     }
 
     pub fn create_edge(&mut self, main_node_id: i32, addition_id: i32, edge_type: GraphEdgeType) {
-        self.edges
-            .put_value(main_node_id, compress_edge(addition_id, edge_type));
-        if edge_type.is_normal_edge() {
-            self.edges
-                .put_value(addition_id, compress_edge(main_node_id, edge_type));
+        // compute both values first so a failing assertion cannot leave a half-written edge
+        let main_value = compress_edge(addition_id, edge_type);
+        let addition_value = edge_type
+            .is_normal_edge()
+            .then(|| compress_edge(main_node_id, edge_type));
+        self.edges.put_value(main_node_id, main_value);
+        if let Some(value) = addition_value {
+            self.edges.put_value(addition_id, value);
         }
     }
 
     pub fn remove_edge(&mut self, main_node_id: i32, addition_id: i32, edge_type: GraphEdgeType) {
-        self.edges
-            .remove(main_node_id, compress_edge(addition_id, edge_type));
-        if edge_type.is_normal_edge() {
-            self.edges
-                .remove(addition_id, compress_edge(main_node_id, edge_type));
+        let main_value = compress_edge(addition_id, edge_type);
+        let addition_value = edge_type
+            .is_normal_edge()
+            .then(|| compress_edge(main_node_id, edge_type));
+        self.edges.remove(main_node_id, main_value);
+        if let Some(value) = addition_value {
+            self.edges.remove(addition_id, value);
         }
     }
 

@@ -353,6 +353,7 @@ tests = ["platform/vcs-log/graph/test/com/intellij/vcs/log/graph/impl/EdgeStorag
 deviations = [
   "Storage shared through Arc<RwLock<EdgeStorage>>; mutating methods take &self",
   "get_edges skips ids without a node index (upstream: NullPointerException)",
+  "get_edges returns a BTreeSet (deterministic order; Java's HashSet order is deterministic, Rust's is not)",
 ]
 
 [modules."ig-log::facade::base_controller"]

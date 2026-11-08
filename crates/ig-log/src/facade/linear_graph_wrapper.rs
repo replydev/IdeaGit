@@ -12,6 +12,8 @@ use crate::api::permanent::VcsLogGraphNodeId;
 use crate::collapsing::edge_storage_wrapper::EdgeStorageWrapper;
 use crate::visible_graph::VcsLogVisibleGraphIndex;
 
+/// Upstream's `LinearBekGraph`/`WorkingLinearBekGraph` subclass this; in Rust embed it and delegate
+/// `LinearGraph`.
 pub struct LinearGraphWrapper {
     pub graph: Arc<dyn LinearGraph>,
     pub hidden_edges: EdgeStorageWrapper,

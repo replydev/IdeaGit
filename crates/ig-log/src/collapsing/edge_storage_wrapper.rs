@@ -4,8 +4,12 @@
 //!
 //! Deviation: the storage is shared through `Arc<RwLock<_>>` (upstream shares the mutable object
 //! between wrappers and `CollapsedGraph`), so mutating methods take `&self`.
+//!
+//! Locking rule: no user callback (`get_node_index_by_id`, `get_node_id_by_index`) runs while a
+//! storage guard is held. Ids are resolved into locals before the guard is taken, and indexes are
+//! resolved only after it is released. A callback may therefore re-enter the wrapper safely.
 
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 use std::sync::{Arc, RwLock};
 
 use crate::api::EdgeFilter;
@@ -38,6 +42,9 @@ impl EdgeStorageWrapper {
     }
 
     /// Converts with the node ids / indexes of `graph`.
+    ///
+    /// Captures `Arc<dyn LinearGraph>` clones; a graph that owns its own wrapper (upstream
+    /// `CollapsedGraph`) must pass a `Weak` or index closures to avoid an `Arc` cycle (Plan 2b).
     pub fn for_graph(
         edge_storage: Arc<RwLock<EdgeStorage>>,
         graph: Arc<dyn LinearGraph>,
@@ -58,15 +65,16 @@ impl EdgeStorageWrapper {
     }
 
     fn storage(&self) -> std::sync::RwLockReadGuard<'_, EdgeStorage> {
+        // the storage is a plain map, so a guard from a poisoned lock is safe to reuse
         self.edge_storage
             .read()
-            .expect("edge storage lock poisoned")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     fn storage_mut(&self) -> std::sync::RwLockWriteGuard<'_, EdgeStorage> {
         self.edge_storage
             .write()
-            .expect("edge storage lock poisoned")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     pub fn remove_edge(&self, graph_edge: &GraphEdge) {
@@ -84,16 +92,17 @@ impl EdgeStorageWrapper {
     /// Whether a normal edge between the two node indexes is stored.
     pub fn has_edge(&self, from_index: i32, to_index: i32) -> bool {
         let to_id = (self.get_node_id_by_index)(to_index);
-        self.storage()
-            .get_edges((self.get_node_id_by_index)(from_index))
+        let from_id = (self.get_node_id_by_index)(from_index);
+        let retrieved = self.storage().get_edges(from_id);
+        retrieved
             .into_iter()
             .any(|(other, edge_type)| edge_type.is_normal_edge() && int_equal(other, to_id))
     }
 
     pub fn get_adjacent_edges(&self, node_index: i32, filter: EdgeFilter) -> Vec<GraphEdge> {
-        let retrieved = self
-            .storage()
-            .get_edges((self.get_node_id_by_index)(node_index));
+        let node_id = (self.get_node_id_by_index)(node_index);
+        // the guard is a temporary, released before any index callback in `decompress_edge`
+        let retrieved = self.storage().get_edges(node_id);
         retrieved
             .into_iter()
             .filter_map(|(target_id, edge_type)| {
@@ -103,11 +112,18 @@ impl EdgeStorageWrapper {
             .collect()
     }
 
-    pub fn get_edges(&self) -> HashSet<GraphEdge> {
+    /// All stored edges, in `GraphEdge` order.
+    ///
+    /// Deviation: a `BTreeSet` rather than a `HashSet`, so the order is deterministic (Java's
+    /// `HashSet` order is deterministic, Rust's is not).
+    pub fn get_edges(&self) -> BTreeSet<GraphEdge> {
         let known_ids = self.storage().get_known_ids();
-        let mut result = HashSet::new();
+        let mut result = BTreeSet::new();
         for id in known_ids {
-            // upstream passes a possibly null index on; an unknown id has no edges to report
+            // Deviation: upstream passes a possibly null index on (NullPointerException); here an id
+            // without a node index is skipped. Unmapped ids are hidden nodes, which is consistent
+            // with `decompress_edge` dropping edges to hidden nodes. The result is therefore
+            // complete only for identity or complete mappings.
             if let Some(index) = (self.get_node_index_by_id)(id) {
                 result.extend(self.get_adjacent_edges(index, EdgeFilter::All));
             }
