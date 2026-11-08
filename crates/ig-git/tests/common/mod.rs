@@ -9,6 +9,8 @@ use ig_git::console::{ConsoleSink, NullConsole};
 use ig_git::handler::GitHandler;
 use ig_git::runner::Git;
 
+pub mod log_helpers;
+
 /// An empty file used as the global git config, so the developer's config can't affect tests.
 fn empty_global_config() -> PathBuf {
     let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("empty-gitconfig");
@@ -33,6 +35,15 @@ pub const SCRUBBED_ENV: &[&str] = &[
 
 /// Runs git in `dir` with a fixed identity and no global/system config; returns the raw output.
 pub fn git_output(dir: &Path, args: &[&str]) -> std::process::Output {
+    git_output_with_env(dir, args, &[])
+}
+
+/// Like [`git_output`], with extra environment variables (e.g. `GIT_COMMITTER_DATE`).
+pub fn git_output_with_env(
+    dir: &Path,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> std::process::Output {
     let mut cmd = Command::new("git");
     cmd.args(args)
         .current_dir(dir)
@@ -45,6 +56,7 @@ pub fn git_output(dir: &Path, args: &[&str]) -> std::process::Output {
     for v in SCRUBBED_ENV {
         cmd.env_remove(v);
     }
+    cmd.envs(env.iter().copied());
     cmd.output().expect("git is installed")
 }
 

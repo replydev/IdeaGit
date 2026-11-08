@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+ig-log = { path = "../ig-log" }
 regex.workspace = true
 thiserror.workspace = true
 

@@ -8,6 +8,7 @@ pub mod console;
 pub mod error;
 pub mod handler;
 pub mod hash;
+pub mod log;
 pub mod natural_comparator;
 pub mod reader;
 pub mod refs;

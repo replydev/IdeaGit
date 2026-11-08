@@ -54,6 +54,7 @@ dependencies = [
 name = "ig-git"
 version = "0.1.0"
 dependencies = [
+ "ig-log",
  "regex",
  "tempfile",
  "thiserror",
