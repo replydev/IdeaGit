@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ig-git"]
+members = ["crates/ig-git", "crates/ig-log"]
 
 [workspace.package]
 edition = "2024"

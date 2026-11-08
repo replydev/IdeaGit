@@ -102,3 +102,330 @@ upstream = [
   "plugins/git4idea/backend/src/roots/GitRootChecker.java",
 ]
 deviations = ["Simplified: enclosing root below the user home + bounded downward scan; skips a fixed list of tool/cache dirs instead of .gitignore'd dirs"]
+
+[modules."ig-log::graph_commit"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/graph-api/src/com/intellij/vcs/log/graph/GraphCommit.java",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/AbstractGraphCommit.java",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/GraphCommitImpl.java",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/IntGraphCommit.java",
+]
+deviations = ["Int-specialised commit classes not needed; GraphCommitImpl is generic over the id"]
+
+[modules."ig-log::permanent_graph"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph-api/src/com/intellij/vcs/log/graph/PermanentGraph.kt"]
+deviations = [
+  "create_visible_graph returns Result and fails with UnsupportedGraphOptions for Bek, LinearBek, FirstParent and branch/text filters (Plan 2b)",
+  "all_commits returns a lazy AllCommits view; the in-branch predicate is a ContainedInBranchCondition",
+]
+
+[modules."ig-log::visible_graph"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/graph-api/src/com/intellij/vcs/log/graph/VisibleGraph.kt",
+  "platform/vcs-log/graph-api/src/com/intellij/vcs/log/graph/RowInfo.java",
+  "platform/vcs-log/graph-api/src/com/intellij/vcs/log/graph/RowType.java",
+]
+deviations = ["get_row_info returns a boxed RowInfo borrowing the visible graph"]
+
+[modules."ig-log::print_element"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/graph-api/src/com/intellij/vcs/log/graph/PrintElement.kt",
+  "platform/vcs-log/graph-api/src/com/intellij/vcs/log/graph/NodePrintElement.java",
+  "platform/vcs-log/graph-api/src/com/intellij/vcs/log/graph/EdgePrintElement.kt",
+]
+
+[modules."ig-log::graph_color_manager"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph-api/src/com/intellij/vcs/log/graph/GraphColorManager.java"]
+
+[modules."ig-log::actions"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/graph-api/src/com/intellij/vcs/log/graph/actions/ActionController.java",
+  "platform/vcs-log/graph-api/src/com/intellij/vcs/log/graph/actions/GraphAction.kt",
+  "platform/vcs-log/graph-api/src/com/intellij/vcs/log/graph/actions/GraphAnswer.java",
+]
+deviations = [
+  "AWT Cursor becomes Cursor::{Default, Hand}",
+  "The affected element is always a GraphPrintElement (no lookup of foreign PrintElements by equality)",
+  "Runnable graph updater becomes GraphUpdater, run through VisibleGraphImpl::run_graph_updater",
+]
+
+[modules."ig-log::api"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/api/EdgeFilter.java",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/api/GraphLayout.java",
+]
+
+[modules."ig-log::api::elements"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/api/elements/GraphElement.java",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/api/elements/GraphNode.java",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/api/elements/GraphNodeType.java",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/api/elements/GraphEdge.java",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/api/elements/GraphEdgeType.java",
+]
+deviations = ["GraphElement is an enum over GraphNode and GraphEdge"]
+
+[modules."ig-log::api::linear_graph"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/api/LinearGraph.kt",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/api/LiteLinearGraph.java",
+]
+
+[modules."ig-log::api::permanent"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/api/permanent/PermanentCommitsInfo.kt",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/api/permanent/PermanentGraphInfo.java",
+]
+deviations = ["PermanentGraphInfo.linear_graph returns an Arc handle"]
+
+[modules."ig-log::api::printer"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/api/printer/GraphColorGetter.kt",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/api/printer/GraphPrintElement.kt",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/api/printer/PrintElementGenerator.java",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/api/printer/PrintElementPresentationManager.java",
+]
+deviations = ["GraphPrintElement is an enum over the two concrete print element types"]
+
+[modules."ig-log::utils"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/TimestampGetter.java"]
+
+[modules."ig-log::utils::flags"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/Flags.java",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/impl/BitSetFlags.java",
+]
+tests = ["platform/vcs-log/graph/test/com/intellij/vcs/log/graph/utils/BitSetFlagsTest.java"]
+
+[modules."ig-log::utils::normal_edge"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/NormalEdge.java"]
+
+[modules."ig-log::utils::linear_graph_utils"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/LinearGraphUtils.java"]
+deviations = ["DEFAULT_GRAPH_ANSWER is the function default_graph_answer()"]
+
+[modules."ig-log::utils::dfs_util"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/DfsUtil.kt"]
+
+[modules."ig-log::utils::int_int_multi_map"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/IntIntMultiMap.java"]
+tests = ["platform/vcs-log/graph/test/com/intellij/vcs/log/graph/utils/IntIntMultiMapTest.kt"]
+
+[modules."ig-log::utils::java_sort"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = []
+deviations = ["IdeaGit helper replacing java.util.TimSort / fastutil stable sort: exact TimSort small-array path below 32 elements, stable merge sort above (identical for consistent comparators); never panics on inconsistent comparators"]
+
+[modules."ig-log::utils::bounded_cache"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = []
+deviations = ["IdeaGit helper replacing com.intellij.util.containers.SLRUMap with FIFO eviction; only memoises pure computations"]
+
+[modules."ig-log::permanent::duplicate_parent_fixer"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/permanent/DuplicateParentFixer.java"]
+deviations = ["Each commit is fixed once (Cow) instead of on every access of a lazy list"]
+
+[modules."ig-log::permanent::permanent_linear_graph_builder"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/permanent/PermanentLinearGraphBuilder.java"]
+tests = [
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/impl/permanent/GraphBuilderTest.kt",
+  "platform/vcs-log/graph/testData/graphBuilder",
+]
+deviations = [
+  "Bug fix: an edge to a not-loaded parent is written to that parent's slot, not the first free slot (upstream swaps parents when several are not loaded and processed out of order)",
+  "Not-loaded parents with the same first child are processed in first-seen order (upstream: HashMap order)",
+]
+
+[modules."ig-log::permanent::permanent_linear_graph_impl"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/permanent/PermanentLinearGraphImpl.java"]
+tests = ["platform/vcs-log/graph/test/com/intellij/vcs/log/graph/impl/permanent/GraphBuilderTest.kt"]
+
+[modules."ig-log::permanent::graph_layout_builder"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/permanent/GraphLayoutBuilder.kt"]
+tests = [
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/impl/permanent/GraphLayoutBuilderTest.java",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/impl/permanent/GraphLayoutBuilderHeadOrderTest.kt",
+  "platform/vcs-log/graph/testData/layoutBuilder",
+]
+deviations = [
+  "branches is an ordered slice (upstream: Set in hash order; matters only for comparator ties)",
+  "No sortCatching: Rust comparators cannot throw",
+]
+
+[modules."ig-log::permanent::graph_layout_impl"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/permanent/GraphLayoutImpl.kt"]
+
+[modules."ig-log::permanent::permanent_commits_info_impl"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/permanent/PermanentCommitsInfoImpl.kt",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/RowsMapping.kt",
+]
+tests = [
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/impl/permanent/GraphBuilderHashIndexTest.java",
+  "platform/vcs-log/graph/testData/graphHashIndex",
+]
+deviations = [
+  "No Int-specialised storage",
+  "get_commit_id panics for an unknown negative id (upstream returns null)",
+]
+
+[modules."ig-log::print::edges_in_row_generator"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/print/EdgesInRowGenerator.java"]
+tests = [
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/impl/print/EdgesInRowTest.java",
+  "platform/vcs-log/graph/testData/edgesInRow",
+]
+deviations = [
+  "BTreeSet instead of HashSet (deterministic order)",
+  "BoundedCache instead of SLRUMap",
+]
+
+[modules."ig-log::print::elements"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/print/elements/PrintElementBase.kt",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/print/elements/SimplePrintElementImpl.kt",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/print/elements/EdgePrintElementImpl.kt",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/print/elements/TerminalEdgePrintElement.java",
+]
+deviations = [
+  "color_id and is_selected are computed when the element is created, not on every access",
+  "TerminalEdgePrintElement is the constructor EdgePrintElementImpl::terminal",
+]
+
+[modules."ig-log::print::graph_element_comparator_by_layout_index"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/print/GraphElementComparatorByLayoutIndex.java"]
+
+[modules."ig-log::print::graph_color_getter"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/print/GraphColorGetterByHead.kt",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/print/GraphColorGetterByNode.kt",
+]
+
+[modules."ig-log::print::print_element_generator_impl"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/print/PrintElementGeneratorImpl.kt"]
+tests = [
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/impl/print/PrintElementGeneratorTest.kt",
+  "platform/vcs-log/graph/testData/elementGenerator",
+]
+deviations = [
+  "Owns its presentation manager (upstream shares it with VisibleGraphImpl)",
+  "BoundedCache instead of SLRUMap",
+]
+
+[modules."ig-log::collapsing::edge_storage"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/collapsing/EdgeStorage.java"]
+tests = ["platform/vcs-log/graph/test/com/intellij/vcs/log/graph/impl/EdgeStorageTest.kt"]
+
+[modules."ig-log::collapsing::edge_storage_wrapper"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/collapsing/EdgeStorageWrapper.java"]
+tests = ["platform/vcs-log/graph/test/com/intellij/vcs/log/graph/impl/EdgeStorageTest.kt"]
+deviations = [
+  "Storage shared through Arc<RwLock<EdgeStorage>>; mutating methods take &self",
+  "get_edges skips ids without a node index (upstream: NullPointerException)",
+]
+
+[modules."ig-log::facade::base_controller"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/BaseController.java"]
+
+[modules."ig-log::facade::graph_changes"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/GraphChanges.java",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/GraphChangesUtil.java",
+]
+deviations = ["Interfaces and *Impl classes collapse into structs; edges_replaced returns a Vec (upstream HashSet with identity equality)"]
+
+[modules."ig-log::facade::linear_graph_controller"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/LinearGraphController.kt"]
+deviations = ["compiled_graph returns an Arc handle; LinearGraphAction is GraphAction"]
+
+[modules."ig-log::facade::linear_graph_wrapper"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/LinearGraphWrapper.kt"]
+
+[modules."ig-log::facade::reachable_nodes"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/ReachableNodes.kt"]
+tests = [
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/impl/permanent/ContainingBranchesTest.java",
+  "platform/vcs-log/graph/testData/containingBranches",
+]
+deviations = ["Mutex instead of synchronized"]
+
+[modules."ig-log::facade::print_element_presentation_manager_impl"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/PrintElementPresentationManagerImpl.kt"]
+
+[modules."ig-log::facade::permanent_graph_impl"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/PermanentGraphImpl.kt"]
+deviations = [
+  "Only Options.Base(Normal) without filters; others return UnsupportedGraphOptions (Plan 2b)",
+  "Unfiltered Normal uses BaseController directly instead of CollapsedController over an all-visible CollapsedGraph (same compiled graph; no collapse/expand/fragment hover)",
+  "Branch node ids sorted ascending before the layout builder",
+  "No bekIntMap / SortedBaseController yet",
+]
+
+[modules."ig-log::facade::visible_graph_impl"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/VisibleGraphImpl.kt"]
+deviations = [
+  "Implements ActionController itself (upstream inner class)",
+  "BUTTON_COLLAPSE/BUTTON_EXPAND reported unsupported until CollapsedController (Plan 2b)",
+  "buildSimpleGraphInfo / SimpleGraphInfo not ported",
+  "Graph updater run via run_graph_updater",
+]
+
+[modules."ig-log::tests::common"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/AbstractTestWithTextFile.java",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/AbstractTestWithTwoTextFile.java",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/GraphStrUtils.java",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/StrUtils.kt",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/TestGraphBuilder.kt",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/impl/CommitIdManager.java",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/parser/CommitParser.java",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/parser/SimpleCommit.java",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/parser/EdgeNodeCharConverter.java",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/parser/LinearGraphParser.java",
+]
+tests = [
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/TestGraphBuilderTest.kt",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/impl/print/TestGraphBuilderTest.kt",
+  "platform/vcs-log/graph/testData/testGraphBuilder",
+  "platform/vcs-log/graph/testData/testParser",
+]
+deviations = ["Test support code; asTestGraphString and TestPermanentGraphInfo not ported yet (needed by Plan 2b tests)"]
