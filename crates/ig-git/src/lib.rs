@@ -2,6 +2,8 @@
 //! See `reference/upstream-map.toml` for the upstream files each module is ported from.
 
 pub mod command;
+pub mod console;
 pub mod error;
+pub mod handler;
 pub mod hash;
 pub mod version;
