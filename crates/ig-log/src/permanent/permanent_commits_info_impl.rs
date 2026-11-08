@@ -3,8 +3,12 @@
 //! Ported from `platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/permanent/PermanentCommitsInfoImpl.kt`
 //! and `platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/RowsMapping.kt`.
 //!
-//! Deviation: no `Int`-specialised storage (`isIntegerCase`); `Vec<CommitId>` is already compact.
-//! `get_node_id` stays a linear search, like upstream ("todo optimize with special map").
+//! Deviations:
+//! - No `Int`-specialised storage (`isIntegerCase`); `Vec<CommitId>` is already compact.
+//! - `get_node_id`, `convert_to_node_ids` and `contains_all` use hash indexes (commit id -> row and
+//!   commit id -> not-loaded id) instead of linear scans (upstream: "todo optimize with special
+//!   map"), so they are O(1) per commit instead of O(rows). Results are unchanged, including for
+//!   duplicate commit ids: `get_node_id` returns the first row, `convert_to_node_ids` every row.
 
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
@@ -52,6 +56,12 @@ impl<CommitId> TimestampGetter for RowsMapping<CommitId> {
 pub struct PermanentCommitsInfoImpl<CommitId> {
     rows_mapping: RowsMapping<CommitId>,
     not_loaded_commits: HashMap<i32, CommitId>,
+    /// Commit id -> its first row.
+    node_ids: HashMap<CommitId, i32>,
+    /// Commit id -> the rows after the first, for commit ids listed more than once (normally empty).
+    duplicate_node_ids: HashMap<CommitId, Vec<i32>>,
+    /// Commit id -> its not-loaded id (each not-loaded commit gets exactly one id).
+    not_loaded_node_ids: HashMap<CommitId, i32>,
 }
 
 impl<CommitId: Clone + Eq + Hash + Send + Sync> PermanentCommitsInfoImpl<CommitId> {
@@ -62,12 +72,29 @@ impl<CommitId: Clone + Eq + Hash + Send + Sync> PermanentCommitsInfoImpl<CommitI
         not_loaded_commits: HashMap<i32, CommitId>,
     ) -> PermanentCommitsInfoImpl<CommitId> {
         let mut rows_mapping = RowsMapping::new(graph_commits.len());
-        for commit in graph_commits {
+        let mut node_ids = HashMap::with_capacity(graph_commits.len());
+        let mut duplicate_node_ids: HashMap<CommitId, Vec<i32>> = HashMap::new();
+        for (row, commit) in graph_commits.iter().enumerate() {
             rows_mapping.add(commit.id().clone(), commit.timestamp());
+            if node_ids.contains_key(commit.id()) {
+                duplicate_node_ids
+                    .entry(commit.id().clone())
+                    .or_default()
+                    .push(row as i32);
+            } else {
+                node_ids.insert(commit.id().clone(), row as i32);
+            }
         }
+        let not_loaded_node_ids = not_loaded_commits
+            .iter()
+            .map(|(&node_id, commit_id)| (commit_id.clone(), node_id))
+            .collect();
         PermanentCommitsInfoImpl {
             rows_mapping,
             not_loaded_commits,
+            node_ids,
+            duplicate_node_ids,
+            not_loaded_node_ids,
         }
     }
 
@@ -76,10 +103,9 @@ impl<CommitId: Clone + Eq + Hash + Send + Sync> PermanentCommitsInfoImpl<CommitI
     }
 
     fn get_not_load_node_id(&self, commit_id: &CommitId) -> i32 {
-        self.not_loaded_commits
-            .iter()
-            .find(|(_, value)| *value == commit_id)
-            .map(|(&key, _)| key)
+        self.not_loaded_node_ids
+            .get(commit_id)
+            .copied()
             .unwrap_or(-1)
     }
 
@@ -109,17 +135,16 @@ impl<CommitId: Clone + Eq + Hash + Send + Sync> PermanentCommitsInfoImpl<CommitI
         commit_ids: &HashSet<CommitId>,
         skip_not_loaded_commits: bool,
     ) -> HashSet<VcsLogGraphNodeId> {
-        let mut result: HashSet<i32> = self
-            .rows_mapping
-            .commit_id_mapping()
-            .iter()
-            .enumerate()
-            .filter(|(_, commit_id)| commit_ids.contains(commit_id))
-            .map(|(i, _)| i as i32)
-            .collect();
-        if !skip_not_loaded_commits {
-            for (&node_id, commit_id) in &self.not_loaded_commits {
-                if commit_ids.contains(commit_id) {
+        let mut result: HashSet<i32> = HashSet::with_capacity(commit_ids.len());
+        for commit_id in commit_ids {
+            if let Some(&row) = self.node_ids.get(commit_id) {
+                result.insert(row);
+                if let Some(rows) = self.duplicate_node_ids.get(commit_id) {
+                    result.extend(rows.iter().copied());
+                }
+            }
+            if !skip_not_loaded_commits {
+                if let Some(&node_id) = self.not_loaded_node_ids.get(commit_id) {
                     result.insert(node_id);
                 }
             }
@@ -131,8 +156,9 @@ impl<CommitId: Clone + Eq + Hash + Send + Sync> PermanentCommitsInfoImpl<CommitI
     where
         CommitId: 'a,
     {
-        let mapping = self.rows_mapping.commit_id_mapping();
-        commit_ids.into_iter().all(|id| mapping.contains(id))
+        commit_ids
+            .into_iter()
+            .all(|id| self.node_ids.contains_key(id))
     }
 }
 
@@ -174,13 +200,8 @@ impl<CommitId: Clone + Eq + Hash + Send + Sync> PermanentCommitsInfo<CommitId>
     /// - `<= -2`: the synthetic id of a commit referenced as a parent but not loaded;
     /// - `-1`: unknown to this permanent graph.
     fn get_node_id(&self, commit_id: &CommitId) -> VcsLogGraphNodeId {
-        if let Some(index) = self
-            .rows_mapping
-            .commit_id_mapping()
-            .iter()
-            .position(|id| id == commit_id)
-        {
-            return index as i32;
+        if let Some(&row) = self.node_ids.get(commit_id) {
+            return row;
         }
         self.get_not_load_node_id(commit_id)
     }
