@@ -27,16 +27,15 @@ static BUNDLES: &[(&str, &str)] = &[
     ),
 ];
 
-fn bundles() -> &'static HashMap<(&'static str, String), String> {
-    static MAP: OnceLock<HashMap<(&'static str, String), String>> = OnceLock::new();
+type Bundle = HashMap<String, String>;
+
+fn bundles() -> &'static HashMap<&'static str, Bundle> {
+    static MAP: OnceLock<HashMap<&'static str, Bundle>> = OnceLock::new();
     MAP.get_or_init(|| {
-        let mut map = HashMap::new();
-        for (bundle, text) in BUNDLES {
-            for (key, value) in parse_properties(text) {
-                map.insert((*bundle, key), value);
-            }
-        }
-        map
+        BUNDLES
+            .iter()
+            .map(|(name, text)| (*name, parse_properties(text).into_iter().collect()))
+            .collect()
     })
 }
 
@@ -44,15 +43,20 @@ fn bundles() -> &'static HashMap<(&'static str, String), String> {
 /// would hide less). `import-ui` fails on missing keys, so this only happens for typos.
 pub fn text(bundle: &str, key: &str) -> String {
     bundles()
-        .iter()
-        .find(|((b, k), _)| *b == bundle && k == key)
-        .map(|(_, v)| v.clone())
+        .get(bundle)
+        .and_then(|b| b.get(key))
+        .cloned()
         .unwrap_or_else(|| key.to_string())
 }
 
-/// `Bundle.message(key, args...)`.
+/// `Bundle.message(key, args...)`. Without arguments, or when the pattern has no `{`, the raw
+/// value is returned unformatted (`BundleBase.postprocessValue`: `''` stays as written).
 pub fn message(bundle: &str, key: &str, args: &[&str]) -> String {
-    format_message(&text(bundle, key), args)
+    let raw = text(bundle, key);
+    if args.is_empty() || !raw.contains('{') {
+        return raw;
+    }
+    format_message(&raw, args)
 }
 
 /// Parses `.properties` text: `key=value` / `key: value` lines, `#`/`!` comments.
@@ -65,7 +69,8 @@ pub fn parse_properties(text: &str) -> Vec<(String, String)> {
         {
             continue;
         }
-        let continued = line.ends_with('\\') && !line.ends_with("\\\\");
+        // an odd run of trailing backslashes continues the line
+        let continued = trailing_backslashes(line) % 2 == 1;
         logical.push_str(if continued {
             &line[..line.len() - 1]
         } else {
@@ -77,7 +82,9 @@ pub fn parse_properties(text: &str) -> Vec<(String, String)> {
         let entry = std::mem::take(&mut logical);
         let split = entry
             .char_indices()
-            .find(|&(i, c)| (c == '=' || c == ':') && !entry[..i].ends_with('\\'))
+            .find(|&(i, c)| {
+                (c == '=' || c == ':') && trailing_backslashes(&entry[..i]).is_multiple_of(2)
+            })
             .map(|(i, _)| i)
             .unwrap_or(entry.len());
         let key = unescape(entry[..split].trim_end());
@@ -87,27 +94,48 @@ pub fn parse_properties(text: &str) -> Vec<(String, String)> {
     out
 }
 
+fn trailing_backslashes(s: &str) -> usize {
+    s.bytes().rev().take_while(|&b| b == b'\\').count()
+}
+
+fn flush_utf16(units: &mut Vec<u16>, out: &mut String) {
+    out.extend(
+        char::decode_utf16(units.drain(..)).map(|r| r.unwrap_or(char::REPLACEMENT_CHARACTER)),
+    );
+}
+
 fn unescape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
+    // `\uXXXX` escapes are UTF-16 code units: surrogate pairs combine
+    let mut units: Vec<u16> = Vec::new();
     let mut chars = s.chars();
     while let Some(c) = chars.next() {
         if c != '\\' {
+            flush_utf16(&mut units, &mut out);
             out.push(c);
             continue;
         }
-        match chars.next() {
-            Some('n') => out.push('\n'),
-            Some('t') => out.push('\t'),
+        let escape = chars.next();
+        if escape != Some('u') {
+            flush_utf16(&mut units, &mut out);
+        }
+        match escape {
             Some('u') => {
                 let hex: String = chars.by_ref().take(4).collect();
-                if let Some(ch) = u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
-                    out.push(ch);
+                if let Ok(unit) = u16::from_str_radix(&hex, 16) {
+                    units.push(unit);
                 }
+                continue;
             }
+            Some('n') => out.push('\n'),
+            Some('t') => out.push('\t'),
+            Some('r') => out.push('\r'),
+            Some('f') => out.push('\u{c}'),
             Some(other) => out.push(other),
             None => {}
         }
     }
+    flush_utf16(&mut units, &mut out);
     out
 }
 
@@ -204,6 +232,34 @@ mod tests {
             format_message("Git {0} isn''t supported", &["1.0"]),
             "Git 1.0 isn't supported"
         );
+    }
+
+    #[test]
+    fn unescape_handles_surrogates_and_control_escapes() {
+        assert_eq!(unescape("\\ud83d\\ude00!"), "\u{1F600}!");
+        assert_eq!(unescape("a\\rb\\fc"), "a\rb\u{c}c");
+        assert_eq!(unescape("\\ud83dx"), "\u{FFFD}x");
+    }
+
+    #[test]
+    fn continuation_needs_an_odd_backslash_run() {
+        let parsed = parse_properties("a=x\\\\\nb=y\\\\\\\n z\n");
+        assert_eq!(
+            parsed,
+            vec![
+                ("a".to_string(), "x\\".to_string()),
+                ("b".to_string(), "y\\z".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn message_without_args_or_braces_is_raw() {
+        // BundleBase.postprocessValue: no formatting without arguments
+        assert_eq!(message("NoSuchBundle", "it''s {0}", &[]), "it''s {0}");
+        assert_eq!(message("NoSuchBundle", "it''s", &["x"]), "it''s");
+        assert_eq!(text("NoSuchBundle", "k"), "k");
+        assert!(!text("VcsLogBundle", "vcs.log.tab.name").is_empty());
     }
 
     #[test]

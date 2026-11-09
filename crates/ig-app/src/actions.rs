@@ -8,6 +8,8 @@
 //! Deviation: only the actions IdeaGit has are bound; keystrokes IntelliJ writes that GPUI can't
 //! express are skipped (logged).
 
+use std::sync::OnceLock;
+
 use gpui::{Action, App, KeyBinding};
 
 gpui::actions!(
@@ -99,7 +101,9 @@ pub fn convert_keystroke(stroke: &str) -> Option<String> {
             "control" | "ctrl" => "ctrl".to_string(),
             "alt" => "alt".to_string(),
             "shift" => "shift".to_string(),
-            "pressed" | "released" | "typed" => continue,
+            "pressed" => continue,
+            // key-release / key-typed strokes can't be expressed as GPUI bindings
+            "released" | "typed" => return None,
             key => convert_key(key)?,
         };
         parts.push(mapped);
@@ -184,28 +188,45 @@ pub fn parse_keymap(text: &str) -> Vec<Shortcut> {
 static DEFAULT_KEYMAP: &str = include_str!("../../../assets/keymaps/default.tsv");
 static MACOS_KEYMAP: &str = include_str!("../../../assets/keymaps/macos.tsv");
 
-/// The keymap of this OS (IntelliJ's default per OS: `Mac OS X 10.5+` on macOS, `$default`
-/// elsewhere).
-pub fn os_keymap() -> Vec<Shortcut> {
-    parse_keymap(if cfg!(target_os = "macos") {
-        MACOS_KEYMAP
-    } else {
-        DEFAULT_KEYMAP
+fn cached_os_keymap() -> &'static [Shortcut] {
+    static KEYMAP: OnceLock<Vec<Shortcut>> = OnceLock::new();
+    KEYMAP.get_or_init(|| {
+        parse_keymap(if cfg!(target_os = "macos") {
+            MACOS_KEYMAP
+        } else {
+            DEFAULT_KEYMAP
+        })
     })
+}
+
+/// The keymap of this OS (IntelliJ's default per OS: `Mac OS X 10.5+` on macOS, `$default`
+/// elsewhere). Parsed once.
+pub fn os_keymap() -> Vec<Shortcut> {
+    cached_os_keymap().to_vec()
 }
 
 /// The first shortcut of `action_id` in this OS keymap, for menus and tooltips.
 pub fn shortcut_for(action_id: &str) -> Option<String> {
-    os_keymap()
-        .into_iter()
+    cached_os_keymap()
+        .iter()
         .find(|s| s.action_id == action_id)
-        .map(|s| s.keystrokes)
+        .map(|s| s.keystrokes.clone())
 }
 
+/// Marks an `App` whose shortcuts are bound.
+struct KeysBound;
+
+impl gpui::Global for KeysBound {}
+
 /// Binds every implemented action's shortcuts.
+/// Idempotent per `App`.
 pub fn bind_keys(cx: &mut App) {
-    let bindings: Vec<KeyBinding> = os_keymap()
-        .into_iter()
+    if cx.has_global::<KeysBound>() {
+        return;
+    }
+    cx.set_global(KeysBound);
+    let bindings: Vec<KeyBinding> = cached_os_keymap()
+        .iter()
         .filter_map(|s| {
             let (action, context) = bindable(&s.action_id)?;
             let context = context.and_then(|c| {
@@ -246,6 +267,21 @@ mod tests {
             Some("shift-escape")
         );
         assert_eq!(convert_keystroke("control NUMPAD5"), None);
+        assert_eq!(convert_keystroke("pressed F5").as_deref(), Some("f5"));
+    }
+
+    #[test]
+    fn release_and_typed_strokes_are_not_bound() {
+        assert_eq!(convert_keystroke("released ESCAPE"), None);
+        assert_eq!(convert_keystroke("control typed A"), None);
+        assert!(parse_keymap("X\treleased ESCAPE\n").is_empty());
+    }
+
+    #[test]
+    fn os_keymap_is_cached() {
+        assert!(std::ptr::eq(cached_os_keymap(), cached_os_keymap()));
+        assert_eq!(os_keymap(), cached_os_keymap());
+        assert!(shortcut_for("Vcs.Log.Refresh").is_some());
     }
 
     #[test]
