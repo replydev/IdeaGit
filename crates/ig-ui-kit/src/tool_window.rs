@@ -4,7 +4,7 @@
 //! Look ported from `platform/platform-impl/src/com/intellij/toolWindow/ToolWindowHeader.kt`,
 //! `.../openapi/wm/impl/content/ContentTabLabel.java` / `TabContentLayout.java` and the
 //! `JBUI.CurrentTheme.ToolWindow` metrics: a 41px header with the tool-window title, the content
-//! tabs (12px side insets, a 2px underline under the selected tab) and a right-aligned toolbar
+//! tabs (12px side insets, a 3px underline under the selected tab) and a right-aligned toolbar
 //! with the Hide button; a 1px border and a resize edge between the dock and the editor area.
 //!
 //! Deviations: one title per renderer (IdeaGit has one bottom tool window so far); no tab drag and
