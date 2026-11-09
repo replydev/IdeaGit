@@ -8,7 +8,8 @@
 //! commits no longer shown are dropped ([`Selection::retain_visible`]).
 //!
 //! An anchor whose commit is no longer shown is replaced by the clicked commit (`JTable` keeps
-//! row indices, which point at other commits after a refresh).
+//! row indices, which point at other commits after a refresh). Without any anchor, Shift+click
+//! extends from row 0, like `JTable.changeSelection` with no anchor (`-1` becomes row 0).
 
 use std::collections::BTreeSet;
 
@@ -58,14 +59,21 @@ impl Selection {
         }
         let commit = rows.commit(row);
         if extend {
-            let anchor_row = match self.anchor.and_then(|a| rows.row(a)) {
-                Some(anchor_row) => anchor_row,
+            let (anchor_row, anchor_selected) = match self.anchor {
+                // JTable: no anchor (-1) extends from row 0 and counts as not selected
                 None => {
-                    self.anchor = Some(commit);
-                    row
+                    self.anchor = Some(rows.commit(0));
+                    (0, false)
                 }
+                Some(anchor) => match rows.row(anchor) {
+                    Some(anchor_row) => (anchor_row, self.commits.contains(&anchor)),
+                    // deviation: a vanished anchor is replaced by the clicked commit
+                    None => {
+                        self.anchor = Some(commit);
+                        (row, self.commits.contains(&commit))
+                    }
+                },
             };
-            let anchor_selected = self.anchor.is_some_and(|a| self.commits.contains(&a));
             let (from, to) = (anchor_row.min(row), anchor_row.max(row));
             let range = (from..=to).map(|r| rows.commit(r));
             if !toggle {
@@ -220,6 +228,26 @@ mod tests {
         assert_eq!(rows_of(&s), [2]);
         s.click(4, false, true, &rows);
         assert_eq!(rows_of(&s), [2, 3, 4]);
+    }
+
+    #[test]
+    fn shift_click_without_an_anchor_extends_from_row_0() {
+        let rows = Linear(10);
+        let mut s = Selection::default();
+        s.click(3, false, true, &rows);
+        assert_eq!(rows_of(&s), [0, 1, 2, 3]);
+        // the anchor stays on row 0
+        s.click(5, false, true, &rows);
+        assert_eq!(rows_of(&s), [0, 1, 2, 3, 4, 5]);
+        // Cmd+Shift with no anchor: the anchor counts as unselected, so the range is removed
+        let mut s = Selection::default();
+        s.select_all(&rows);
+        s.click(2, true, true, &rows);
+        assert_eq!(rows_of(&s), [3, 4, 5, 6, 7, 8, 9]);
+        // Shift+Down with no selection also anchors on row 0 (lead goes to row 0)
+        let mut s = Selection::default();
+        assert_eq!(s.move_by(1, true, &rows), Some(0));
+        assert_eq!(rows_of(&s), [0]);
     }
 
     #[test]

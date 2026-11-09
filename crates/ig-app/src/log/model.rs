@@ -147,14 +147,23 @@ impl LogModel {
 
     /// `Vcs.Log.Refresh`: also restarts a crashed worker.
     pub fn refresh(&mut self) {
-        if let Some(worker) = &mut self.worker {
-            worker.refresh();
+        if let Some(worker) = &mut self.worker
+            && worker.refresh()
+        {
+            // the old epoch's pending loads are gone: let the rows be requested again
+            self.cache.drop_loading();
         }
     }
 
     fn on_event(&mut self, epoch: u64, event: LogEvent, cx: &mut Context<LogModel>) {
-        // events of threads replaced by a restart are stale
-        if self.worker.as_ref().is_none_or(|w| w.epoch() != epoch) {
+        let Some(worker) = &self.worker else {
+            return;
+        };
+        // Snapshots and busy states of threads replaced by a restart are stale. Metadata is not
+        // (commit ids are stable across restarts), and the threads' panics were already reported
+        // when their epoch was current: a restart only replaces a failed epoch, and a second
+        // panic of an old thread is only logged (by the thread).
+        if worker.epoch() != epoch && !matches!(event, LogEvent::Metadata { .. }) {
             return;
         }
         match event {

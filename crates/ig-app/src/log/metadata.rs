@@ -154,6 +154,13 @@ impl MetadataCache {
         self.put(loaded);
     }
 
+    /// Drops every loading placeholder (the loads they wait for were abandoned, e.g. by a worker
+    /// restart), so the rows are requested again.
+    pub fn drop_loading(&mut self) {
+        self.entries
+            .retain(|_, (entry, _)| matches!(entry, Entry::Loaded(_)));
+    }
+
     fn evict(&mut self) {
         if self.entries.len() <= CACHE_SIZE {
             return;
@@ -222,6 +229,17 @@ mod tests {
         assert!(requested.iter().all(|&c| cache.get(c) == Lookup::Loading));
         assert!(matches!(cache.get(5), Lookup::Loaded(_))); // touched above
         assert_eq!(cache.get(6), Lookup::Missing);
+    }
+
+    #[test]
+    fn dropped_placeholders_are_requested_again_and_loaded_rows_kept() {
+        let mut cache = MetadataCache::new();
+        cache.put([(1, meta("one"))]);
+        assert_eq!(cache.request([1, 2, 3]), [2, 3]);
+        cache.drop_loading();
+        assert_eq!(cache.len(), 1);
+        assert!(matches!(cache.get(1), Lookup::Loaded(_)));
+        assert_eq!(cache.request([1, 2, 3]), [2, 3]);
     }
 
     #[test]

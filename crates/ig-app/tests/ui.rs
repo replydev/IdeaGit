@@ -114,9 +114,23 @@ fn wait(
     }
 }
 
+/// The worker's `git`, isolated like the test's own commands (no global/system config, no
+/// inherited repository redirection).
+fn scrubbed_git() -> Arc<Git> {
+    let config = empty_global_config();
+    let config = config.to_str().unwrap();
+    let git = Git::detect("git", Arc::new(NullConsole))
+        .unwrap()
+        .with_base_environment(
+            &[("GIT_CONFIG_GLOBAL", config), ("GIT_CONFIG_NOSYSTEM", "1")],
+            SCRUBBED_ENV,
+        );
+    Arc::new(git)
+}
+
 fn log_model(cx: &mut TestAppContext, root: &Path) -> Entity<LogModel> {
     cx.executor().allow_parking();
-    let git = Arc::new(Git::detect("git", Arc::new(NullConsole)).unwrap());
+    let git = scrubbed_git();
     let roots = vec![root.canonicalize().unwrap()];
     let model = cx.new(|cx| LogModel::new(git, roots, cx));
     wait(cx, &model, |m| {
@@ -159,12 +173,16 @@ fn stale_rows_and_elements_are_ignored(cx: &mut TestAppContext) {
         assert!(m.selection.is_empty());
         assert!(!m.hover_graph(count + 5, 5.0, 5.0, &geometry));
         assert!(!m.click_graph(count + 5, 5.0, 5.0, &geometry));
-        (0..count)
+        // the last arrow (the one pointing up at the bottom of the long edge), far below row 5
+        let arrow = (0..count)
             .flat_map(|r| m.row(r).unwrap().1)
-            .find(|e| matches!(e, GraphPrintElement::Edge(edge) if edge.has_arrow()))
-            .expect("the long `side` edge is drawn with arrows")
+            .filter(|e| matches!(e, GraphPrintElement::Edge(edge) if edge.has_arrow()))
+            .last()
+            .expect("the long `side` edge is drawn with arrows");
+        assert!(arrow_row(&arrow) >= 5, "arrow on row {}", arrow_row(&arrow));
+        arrow
     });
-    // a much shorter log: the arrow's rows no longer exist
+    // a much shorter log (5 rows): the arrow's row no longer exists
     git(dir.path(), &["branch", "-D", "side"]);
     git(dir.path(), &["reset", "-q", "--hard", "HEAD~75"]);
     model.update(cx, |m, _| {
@@ -219,7 +237,7 @@ fn refresh_reaches_the_worker(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn no_repositories_state(cx: &mut TestAppContext) {
-    let git = Arc::new(Git::detect("git", Arc::new(NullConsole)).unwrap());
+    let git = scrubbed_git();
     let model = cx.new(|cx| LogModel::new(git, Vec::new(), cx));
     model.read_with(cx, |m, _| assert_eq!(m.state(), LogState::NoRoots));
 }
