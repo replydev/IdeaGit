@@ -285,7 +285,7 @@ impl ConsoleView {
         cx.spawn(async move |this, cx| {
             while let Ok(message) = rx.recv_async().await {
                 let mut batch = vec![message];
-                batch.extend(rx.try_iter());
+                batch.extend(rx.try_iter().take(CHANNEL_CAPACITY));
                 if this
                     .update(cx, |view, cx| {
                         // as `ConsoleViewImpl`: scroll to the end only when already there
