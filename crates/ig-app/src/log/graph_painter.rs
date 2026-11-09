@@ -225,10 +225,12 @@ impl GraphGeometry {
                     NodePrintElementType::OutlineAndFill => {
                         self.head_node(out, x0, y0, color, selected)
                     }
+                    // AWT centres the stroke on the circle, GPUI draws quad borders inside the
+                    // bounds: grow the ring by half the stroke on each side
                     NodePrintElementType::Outline => out.push(Shape::Ring {
-                        x: x0 - radius,
-                        y: y0 - radius,
-                        diameter,
+                        x: x0 - radius - self.line_thickness / 2.0,
+                        y: y0 - radius - self.line_thickness / 2.0,
+                        diameter: diameter + self.line_thickness,
                         width: self.line_thickness,
                         color: NEUTRAL_COLOR,
                     }),

@@ -3,7 +3,7 @@
 //!
 //! The log worker runs on real threads, so the tests allow parking and poll until it answers.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -15,19 +15,55 @@ use ig_git::runner::Git;
 use ig_log::GraphPrintElement;
 use ig_log::print_element::EdgePrintElement;
 
+/// An empty file used as the global git config (portable, unlike `/dev/null`).
+fn empty_global_config() -> PathBuf {
+    let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("ui-empty-gitconfig");
+    if !path.exists() {
+        std::fs::write(&path, "").unwrap();
+    }
+    path
+}
+
+/// Inherited variables that would redirect git away from the test repository (as in
+/// `crates/ig-git/tests/common/mod.rs`).
+const SCRUBBED_ENV: &[&str] = &[
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_NAMESPACE",
+    "GIT_PREFIX",
+    // `GIT_CONFIG_KEY_<n>` / `GIT_CONFIG_VALUE_<n>` are ignored once `GIT_CONFIG_COUNT` is removed
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT",
+    "GIT_CONFIG",
+    "GIT_AUTHOR_DATE",
+    "GIT_COMMITTER_DATE",
+];
+
 fn git(dir: &Path, args: &[&str]) {
-    let status = Command::new("git")
+    let mut command = Command::new("git");
+    command
         .args(args)
         .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_GLOBAL", empty_global_config())
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_AUTHOR_NAME", "T")
         .env("GIT_AUTHOR_EMAIL", "t@example.com")
         .env("GIT_COMMITTER_NAME", "T")
-        .env("GIT_COMMITTER_EMAIL", "t@example.com")
-        .status()
-        .unwrap();
-    assert!(status.success(), "git {args:?}");
+        .env("GIT_COMMITTER_EMAIL", "t@example.com");
+    for v in SCRUBBED_ENV {
+        command.env_remove(v);
+    }
+    let output = command.output().unwrap();
+    assert!(
+        output.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 /// `main` with `n` commits; `side` forks from the first commit and gets one recent commit, so its
@@ -52,11 +88,15 @@ fn repo(n: usize) -> tempfile::TempDir {
     dir
 }
 
-fn wait(cx: &mut TestAppContext, model: &Entity<LogModel>, done: impl Fn(&LogModel) -> bool) {
+fn wait(
+    cx: &mut TestAppContext,
+    model: &Entity<LogModel>,
+    mut done: impl FnMut(&mut LogModel) -> bool,
+) {
     let started = Instant::now();
     loop {
         cx.run_until_parked();
-        if model.read_with(cx, |m, _| done(m)) {
+        if model.update(cx, |m, _| done(m)) {
             return;
         }
         assert!(started.elapsed() < Duration::from_secs(30), "timed out");
@@ -91,7 +131,43 @@ fn log_loads_selects_and_scrolls(cx: &mut TestAppContext) {
         assert_eq!(m.selection.len(), 1);
         m.request_metadata(0..10);
     });
-    wait(cx, &model, |m| m.cache.len() >= 10);
+    // real metadata, not just loading placeholders
+    wait(cx, &model, |m| m.metadata_loaded_for(10) && !m.is_busy());
+}
+
+#[gpui::test]
+fn stale_rows_and_elements_are_ignored(cx: &mut TestAppContext) {
+    let dir = repo(80);
+    let model = log_model(cx, dir.path());
+    let geometry = ig_app::log::graph_painter::GraphGeometry::new(26.0, 2.0);
+    let arrow = model.update(cx, |m, _| {
+        let count = m.row_count();
+        assert!(m.row(count).is_none());
+        assert!(!m.metadata_loaded_for(count + 1));
+        m.click_row(count, false, false);
+        m.click_row(usize::MAX, true, true);
+        assert!(m.selection.is_empty());
+        assert!(!m.hover_graph(count + 5, 5.0, 5.0, &geometry));
+        assert!(!m.click_graph(count + 5, 5.0, 5.0, &geometry));
+        (0..count)
+            .flat_map(|r| m.row(r).unwrap().1)
+            .find(|e| matches!(e, GraphPrintElement::Edge(edge) if edge.has_arrow()))
+            .expect("the long `side` edge is drawn with arrows")
+    });
+    // a much shorter log: the arrow's rows no longer exist
+    git(dir.path(), &["branch", "-D", "side"]);
+    git(dir.path(), &["reset", "-q", "--hard", "HEAD~75"]);
+    model.update(cx, |m, _| {
+        m.click_row(70, false, false);
+        m.refresh();
+    });
+    wait(cx, &model, |m| m.row_count() == 5 && !m.is_busy());
+    model.update(cx, |m, _| {
+        // the selected commit is no longer shown
+        assert!(m.selection.is_empty());
+        m.click_element(arrow);
+        assert!(m.selection.is_empty());
+    });
 }
 
 #[gpui::test]

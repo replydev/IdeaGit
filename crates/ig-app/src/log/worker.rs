@@ -13,7 +13,12 @@
 //!   requests in batches of [`BATCH_SIZE`], newest request first, keeping the newest
 //!   [`MAX_LOADING_TASKS`] (upstream `SequentialLimitedLifoExecutor`).
 //! - A panic on either thread is caught at the thread boundary, logged and reported as
-//!   [`LogEvent::WorkerFailed`]; [`LogWorker::refresh`] restarts a dead worker.
+//!   [`LogEvent::WorkerFailed`]; [`LogWorker::refresh`] restarts a dead worker under a new epoch
+//!   (events carry their epoch; the UI drops stale ones). Storage and repository manager are kept,
+//!   so commit ids stay stable.
+//! - Dropping the [`LogWorker`] (closing the window) cancels the epoch: the threads stop at the
+//!   next check (data-pack handler, recent-details consumer, between roots and metadata batches,
+//!   the snapshot loop) without starting new work. A running `git` process is not killed.
 //!
 //! Deviation from the app-shell spec ("one dedicated thread"): two threads, because the refresher
 //! is synchronous and the first block must be shown while `initialize()` still loads the full
@@ -23,6 +28,7 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread::JoinHandle;
 
@@ -44,7 +50,7 @@ pub const FIRST_ROWS: i32 = 100;
 
 /// An immutable view of a data pack, built on the snapshot thread and moved to the UI.
 pub struct LogSnapshot {
-    /// Increases with every snapshot of a worker.
+    /// Increases with every snapshot of a worker, also across restarts.
     pub generation: u64,
     pub data: Arc<VcsLogGraphData>,
     /// `None` for an empty or failed pack.
@@ -89,6 +95,7 @@ pub enum LogEvent {
         failed: Vec<VcsLogCommitStorageIndex>,
     },
     /// A refresh (or the initial load) started / finished: shown as status bar progress.
+    /// `Busy(false)` follows the snapshot of the refresh's final data pack.
     Busy(bool),
     /// A worker thread panicked; the message is logged.
     WorkerFailed(String),
@@ -102,53 +109,135 @@ enum SnapshotCommand {
     Pack(Arc<VcsLogGraphData>),
     Recent(VcsRoot, Vec<VcsCommitMetadata>),
     Load(Vec<VcsLogCommitStorageIndex>),
+    /// A refresh started (`true`) or published its final pack (`false`). Sent through the snapshot
+    /// thread so `Busy(false)` reaches the UI after the final snapshot.
+    Busy(bool),
 }
 
-/// Sends events to the UI; returns `false` once the UI is gone.
-pub type EventSink = Arc<dyn Fn(LogEvent) -> bool + Send + Sync>;
+/// Sends events to the UI, tagged with the epoch of the worker threads that sent them (see
+/// [`LogWorker::epoch`]); returns `false` once the UI is gone.
+pub type EventSink = Arc<dyn Fn(u64, LogEvent) -> bool + Send + Sync>;
+
+/// The flags shared by the threads of one epoch.
+#[derive(Default)]
+struct EpochState {
+    /// Set when the worker is dropped or restarted, or a sibling thread failed: no new work.
+    cancelled: AtomicBool,
+    /// Set (before [`LogEvent::WorkerFailed`] is sent) when a thread of the epoch panicked.
+    failed: AtomicBool,
+}
+
+impl EpochState {
+    fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+
+    fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
+    }
+}
+
+/// Sends the events of one epoch.
+#[derive(Clone)]
+struct Emitter {
+    sink: EventSink,
+    epoch: u64,
+}
+
+impl Emitter {
+    fn send(&self, event: LogEvent) -> bool {
+        (self.sink)(self.epoch, event)
+    }
+}
 
 /// The UI's handle on the worker threads.
+///
+/// The storage (commit ids) and the repository manager outlive the threads: a restart after a
+/// crash keeps the ids the UI's snapshot, cache and selection refer to. Dropping the handle
+/// cancels the running work (checked between steps; a running `git` process is not killed).
 pub struct LogWorker {
-    git: Arc<Git>,
     roots: Vec<PathBuf>,
     sink: EventSink,
+    storage: Arc<InMemoryStorage>,
+    repository_manager: Arc<GitRepositoryManager>,
+    /// Snapshot generations, increasing across restarts.
+    generation: Arc<AtomicU64>,
+    epoch: u64,
+    state: Arc<EpochState>,
     refresh_tx: Sender<RefreshCommand>,
     snapshot_tx: Sender<SnapshotCommand>,
     threads: Vec<JoinHandle<()>>,
 }
 
+/// What the threads of one epoch share.
+struct Shared {
+    roots: Vec<VcsRoot>,
+    emitter: Emitter,
+    storage: Arc<InMemoryStorage>,
+    repository_manager: Arc<GitRepositoryManager>,
+    generation: Arc<AtomicU64>,
+    state: Arc<EpochState>,
+}
+
 impl LogWorker {
     /// Starts loading the log of `roots` (`initialize()`).
     pub fn start(git: Arc<Git>, roots: Vec<PathBuf>, sink: EventSink) -> LogWorker {
-        let (refresh_tx, refresh_rx) = channel();
-        let (snapshot_tx, snapshot_rx) = channel();
-        let threads = spawn_threads(
-            git.clone(),
-            &roots,
-            sink.clone(),
-            refresh_rx,
-            snapshot_tx.clone(),
-            snapshot_rx,
-        );
-        LogWorker {
-            git,
+        let (refresh_tx, _) = channel();
+        let (snapshot_tx, _) = channel();
+        let mut worker = LogWorker {
             roots,
             sink,
+            storage: Arc::new(InMemoryStorage::new()),
+            repository_manager: Arc::new(GitRepositoryManager::new(git)),
+            generation: Arc::new(AtomicU64::new(0)),
+            epoch: 0,
+            state: Arc::new(EpochState::default()),
             refresh_tx,
             snapshot_tx,
-            threads,
-        }
+            threads: Vec::new(),
+        };
+        worker.spawn();
+        worker
+    }
+
+    /// The epoch of the running threads: events of older epochs are stale.
+    pub fn epoch(&self) -> u64 {
+        self.epoch
+    }
+
+    /// Cancels the current threads (if any) and starts new ones under a new epoch.
+    fn spawn(&mut self) {
+        self.state.cancel();
+        self.epoch += 1;
+        self.state = Arc::new(EpochState::default());
+        let (refresh_tx, refresh_rx) = channel();
+        let (snapshot_tx, snapshot_rx) = channel();
+        let shared = Shared {
+            roots: self.roots.iter().map(vcs_root).collect(),
+            emitter: Emitter {
+                sink: self.sink.clone(),
+                epoch: self.epoch,
+            },
+            storage: self.storage.clone(),
+            repository_manager: self.repository_manager.clone(),
+            generation: self.generation.clone(),
+            state: self.state.clone(),
+        };
+        self.threads = spawn_threads(shared, refresh_rx, snapshot_tx.clone(), snapshot_rx);
+        // dropping the old senders lets the old threads' loops end
+        self.refresh_tx = refresh_tx;
+        self.snapshot_tx = snapshot_tx;
     }
 
     fn is_alive(&self) -> bool {
-        self.threads.iter().all(|t| !t.is_finished())
+        !self.state.failed.load(Ordering::Acquire) && self.threads.iter().all(|t| !t.is_finished())
     }
 
     /// Requests a refresh of all roots; restarts the worker if a thread died.
     pub fn refresh(&mut self) {
         if !self.is_alive() {
             log::info!("restarting the log worker");
-            *self = LogWorker::start(self.git.clone(), self.roots.clone(), self.sink.clone());
+            self.spawn();
             return;
         }
         let _ = self.refresh_tx.send(RefreshCommand::Refresh);
@@ -162,6 +251,12 @@ impl LogWorker {
     }
 }
 
+impl Drop for LogWorker {
+    fn drop(&mut self) {
+        self.state.cancel();
+    }
+}
+
 fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
     payload
         .downcast_ref::<&str>()
@@ -170,9 +265,12 @@ fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
         .unwrap_or_else(|| "unknown panic".to_string())
 }
 
+/// Runs `body` on a named thread; a panic marks the epoch failed and cancels its other thread
+/// before [`LogEvent::WorkerFailed`] is sent, so a refresh requested on that event restarts.
 fn guarded(
     name: &'static str,
-    sink: EventSink,
+    emitter: Emitter,
+    state: Arc<EpochState>,
     body: impl FnOnce() + Send + 'static,
 ) -> JoinHandle<()> {
     std::thread::Builder::new()
@@ -181,62 +279,90 @@ fn guarded(
             if let Err(payload) = catch_unwind(AssertUnwindSafe(body)) {
                 let message = format!("{name} panicked: {}", panic_message(payload.as_ref()));
                 log::error!("{message}");
-                sink(LogEvent::Busy(false));
-                sink(LogEvent::WorkerFailed(message));
+                state.failed.store(true, Ordering::Release);
+                state.cancel();
+                emitter.send(LogEvent::WorkerFailed(message));
             }
         })
         .expect("spawning a log worker thread")
 }
 
 fn spawn_threads(
-    git: Arc<Git>,
-    roots: &[PathBuf],
-    sink: EventSink,
+    shared: Shared,
     refresh_rx: Receiver<RefreshCommand>,
     snapshot_tx: Sender<SnapshotCommand>,
     snapshot_rx: Receiver<SnapshotCommand>,
 ) -> Vec<JoinHandle<()>> {
-    let repository_manager = Arc::new(GitRepositoryManager::new(git));
+    let Shared {
+        roots,
+        emitter,
+        storage,
+        repository_manager,
+        generation,
+        state,
+    } = shared;
     let provider = Arc::new(GitLogProvider::with_repository_manager(
         repository_manager.clone(),
     ));
-    let roots: Vec<VcsRoot> = roots.iter().map(vcs_root).collect();
-    let storage = Arc::new(InMemoryStorage::new());
 
     let snapshot_thread = {
-        let sink = sink.clone();
-        let storage: Arc<dyn VcsLogStorage> = storage.clone();
-        let repository_manager = repository_manager.clone();
-        guarded("ig-log-snapshot", sink.clone(), move || {
-            SnapshotThread::new(sink, storage, repository_manager).run(snapshot_rx)
-        })
+        let thread = SnapshotThread::new(
+            emitter.clone(),
+            storage.clone(),
+            repository_manager.clone(),
+            generation,
+            state.clone(),
+        );
+        guarded(
+            "ig-log-snapshot",
+            emitter.clone(),
+            state.clone(),
+            move || thread.run(snapshot_rx),
+        )
     };
-    let refresh_thread = guarded("ig-log-refresh", sink.clone(), move || {
+    let refresh_thread = guarded("ig-log-refresh", emitter, state.clone(), move || {
+        if state.is_cancelled() {
+            return;
+        }
         let mut providers = LogProviders::new();
         for root in &roots {
             providers.insert(root.clone(), provider.clone() as Arc<dyn VcsLogProvider>);
         }
         let mut refresher = VcsLogRefresher::new(storage, providers, RECENT_COMMITS_COUNT);
-        let tx = snapshot_tx.clone();
+        let (tx, cancel) = (snapshot_tx.clone(), state.clone());
         refresher.set_data_pack_handler(move |pack| {
-            let _ = tx.send(SnapshotCommand::Pack(pack.clone()));
+            if !cancel.is_cancelled() {
+                let _ = tx.send(SnapshotCommand::Pack(pack.clone()));
+            }
         });
-        let tx = snapshot_tx;
+        let (tx, cancel) = (snapshot_tx.clone(), state.clone());
         refresher.set_recent_details_consumer(move |root, details| {
+            if cancel.is_cancelled() {
+                return;
+            }
+            // only the first block: the 5x retry of a refresh would evict visible rows from
+            // the UI cache (upstream keeps these in a separate `TopCommitsCache`)
+            let details = &details[..details.len().min(RECENT_COMMITS_COUNT)];
             let _ = tx.send(SnapshotCommand::Recent(root.clone(), details.to_vec()));
         });
-        sink(LogEvent::Busy(true));
+        let _ = snapshot_tx.send(SnapshotCommand::Busy(true));
         refresher.initialize();
-        sink(LogEvent::Busy(false));
-        while let Ok(RefreshCommand::Refresh) = refresh_rx.recv() {
+        let _ = snapshot_tx.send(SnapshotCommand::Busy(false));
+        'serve: while let Ok(RefreshCommand::Refresh) = refresh_rx.recv() {
             // coalesce the requests queued meanwhile
             while refresh_rx.try_recv().is_ok() {}
-            sink(LogEvent::Busy(true));
+            if state.is_cancelled() {
+                break;
+            }
+            let _ = snapshot_tx.send(SnapshotCommand::Busy(true));
             for root in &roots {
+                if state.is_cancelled() {
+                    break 'serve;
+                }
                 repository_manager.update(root);
             }
             refresher.refresh(&roots);
-            if !sink(LogEvent::Busy(false)) {
+            if snapshot_tx.send(SnapshotCommand::Busy(false)).is_err() {
                 break;
             }
         }
@@ -245,34 +371,45 @@ fn spawn_threads(
 }
 
 struct SnapshotThread {
-    sink: EventSink,
+    emitter: Emitter,
     storage: Arc<dyn VcsLogStorage>,
     repository_manager: Arc<GitRepositoryManager>,
-    generation: u64,
+    generation: Arc<AtomicU64>,
+    state: Arc<EpochState>,
     current: Option<Arc<VcsLogGraphData>>,
-    /// Commits whose metadata the UI has (or was sent), so first rows aren't loaded twice.
+    /// Commits whose metadata the UI was sent recently, so first rows aren't loaded twice: the
+    /// recent details received since the last snapshot and that snapshot's first rows (bounded).
     known: HashSet<VcsLogCommitStorageIndex>,
+    /// The busy state last sent to the UI.
+    busy: bool,
 }
 
 impl SnapshotThread {
     fn new(
-        sink: EventSink,
+        emitter: Emitter,
         storage: Arc<dyn VcsLogStorage>,
         repository_manager: Arc<GitRepositoryManager>,
+        generation: Arc<AtomicU64>,
+        state: Arc<EpochState>,
     ) -> SnapshotThread {
         SnapshotThread {
-            sink,
+            emitter,
             storage,
             repository_manager,
-            generation: 0,
+            generation,
+            state,
             current: None,
             known: HashSet::new(),
+            busy: false,
         }
     }
 
     fn run(mut self, rx: Receiver<SnapshotCommand>) {
         let mut loads: VecDeque<Vec<VcsLogCommitStorageIndex>> = VecDeque::new();
         loop {
+            if self.state.is_cancelled() {
+                return;
+            }
             // block for one command, then take everything queued
             let first = if loads.is_empty() {
                 match rx.recv() {
@@ -283,10 +420,15 @@ impl SnapshotThread {
                 None
             };
             let mut newest_pack = None;
+            let mut busy = self.busy;
             for command in first.into_iter().chain(rx.try_iter()) {
                 match command {
                     SnapshotCommand::Pack(pack) => newest_pack = Some(pack),
-                    SnapshotCommand::Recent(root, details) => self.recent(&root, &details),
+                    SnapshotCommand::Recent(root, details) => {
+                        if !self.recent(&root, &details) {
+                            return;
+                        }
+                    }
                     SnapshotCommand::Load(commits) => {
                         loads.push_back(commits);
                         // LIFO, limited: drop the oldest requests
@@ -294,12 +436,22 @@ impl SnapshotThread {
                             loads.pop_front();
                         }
                     }
+                    SnapshotCommand::Busy(b) => busy = b,
                 }
+            }
+            if self.state.is_cancelled() {
+                return;
             }
             if let Some(pack) = newest_pack
                 && !self.snapshot(pack)
             {
                 return;
+            }
+            if busy != self.busy {
+                self.busy = busy;
+                if !self.emitter.send(LogEvent::Busy(busy)) {
+                    return;
+                }
             }
             if let Some(commits) = loads.pop_back()
                 && !self.load(&commits)
@@ -309,7 +461,7 @@ impl SnapshotThread {
         }
     }
 
-    fn recent(&mut self, root: &VcsRoot, details: &[VcsCommitMetadata]) {
+    fn recent(&mut self, root: &VcsRoot, details: &[VcsCommitMetadata]) -> bool {
         let loaded: Vec<_> = details
             .iter()
             .map(|d| {
@@ -320,27 +472,34 @@ impl SnapshotThread {
             })
             .collect();
         self.known.extend(loaded.iter().map(|(i, _)| *i));
-        (self.sink)(LogEvent::Metadata {
+        self.emitter.send(LogEvent::Metadata {
             loaded,
             failed: Vec::new(),
-        });
+        })
     }
 
     fn snapshot(&mut self, data: Arc<VcsLogGraphData>) -> bool {
-        self.generation += 1;
+        let generation = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
         let visible = data
             .permanent_graph()
             .and_then(|g| g.create_visible_graph(Options::DEFAULT, None, None).ok());
         let recommended_width = visible.as_ref().map_or(0, |v| v.recommended_width());
+        self.current = Some(data.clone());
         if let Some(visible) = &visible {
-            let first: Vec<_> = (0..visible.visible_commit_count().min(FIRST_ROWS))
+            let first_rows: Vec<_> = (0..visible.visible_commit_count().min(FIRST_ROWS))
                 .map(|row| visible.get_row_info(row).commit())
+                .collect();
+            let missing: Vec<_> = first_rows
+                .iter()
+                .copied()
                 .filter(|c| !self.known.contains(c))
                 .collect();
-            self.current = Some(data.clone());
-            if !self.load(&first) {
+            self.known = first_rows.into_iter().collect();
+            if !self.load(&missing) {
                 return false;
             }
+        } else {
+            self.known.clear();
         }
         let repos = data
             .log_providers()
@@ -354,9 +513,8 @@ impl SnapshotThread {
                 }
             })
             .collect();
-        self.current = Some(data.clone());
-        (self.sink)(LogEvent::Snapshot(Box::new(LogSnapshot {
-            generation: self.generation,
+        self.emitter.send(LogEvent::Snapshot(Box::new(LogSnapshot {
+            generation,
             data,
             visible,
             recommended_width,
@@ -366,8 +524,11 @@ impl SnapshotThread {
 
     /// Reads the metadata of `commits` by root, in batches; reports loaded and failed commits.
     fn load(&mut self, commits: &[VcsLogCommitStorageIndex]) -> bool {
+        if commits.is_empty() {
+            return true;
+        }
         let Some(data) = self.current.clone() else {
-            return (self.sink)(LogEvent::Metadata {
+            return self.emitter.send(LogEvent::Metadata {
                 loaded: Vec::new(),
                 failed: commits.to_vec(),
             });
@@ -391,6 +552,9 @@ impl SnapshotThread {
                 continue;
             };
             for batch in hashes.chunks(BATCH_SIZE) {
+                if self.state.is_cancelled() {
+                    return false;
+                }
                 let index: HashMap<&str, VcsLogCommitStorageIndex> =
                     batch.iter().map(|(h, c)| (h.as_str(), *c)).collect();
                 let names: Vec<String> = batch.iter().map(|(h, _)| h.clone()).collect();
@@ -413,7 +577,6 @@ impl SnapshotThread {
                 }
             }
         }
-        self.known.extend(loaded.iter().map(|(c, _)| *c));
-        (self.sink)(LogEvent::Metadata { loaded, failed })
+        self.emitter.send(LogEvent::Metadata { loaded, failed })
     }
 }

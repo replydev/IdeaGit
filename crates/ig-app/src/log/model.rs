@@ -76,15 +76,15 @@ impl LogModel {
     /// Starts the worker for `roots` (none: the "no repositories" state).
     pub fn new(git: Arc<Git>, roots: Vec<PathBuf>, cx: &mut Context<LogModel>) -> LogModel {
         let worker = (!roots.is_empty()).then(|| {
-            let (tx, rx) = flume::unbounded::<LogEvent>();
+            let (tx, rx) = flume::unbounded::<(u64, LogEvent)>();
             cx.spawn(async move |this, cx| {
                 while let Ok(event) = rx.recv_async().await {
                     let mut events = vec![event];
                     events.extend(rx.try_iter());
                     if this
                         .update(cx, |model, cx| {
-                            for event in events {
-                                model.on_event(event, cx);
+                            for (epoch, event) in events {
+                                model.on_event(epoch, event, cx);
                             }
                         })
                         .is_err()
@@ -94,7 +94,7 @@ impl LogModel {
                 }
             })
             .detach();
-            let sink: EventSink = Arc::new(move |event| tx.send(event).is_ok());
+            let sink: EventSink = Arc::new(move |epoch, event| tx.send((epoch, event)).is_ok());
             LogWorker::start(git, roots.clone(), sink)
         });
         LogModel {
@@ -151,7 +151,11 @@ impl LogModel {
         }
     }
 
-    fn on_event(&mut self, event: LogEvent, cx: &mut Context<LogModel>) {
+    fn on_event(&mut self, epoch: u64, event: LogEvent, cx: &mut Context<LogModel>) {
+        // events of threads replaced by a restart are stale
+        if self.worker.as_ref().is_none_or(|w| w.epoch() != epoch) {
+            return;
+        }
         match event {
             LogEvent::Snapshot(snapshot) => {
                 log::info!(
@@ -165,10 +169,17 @@ impl LogModel {
                 self.hovered_element = None;
                 self.hand_cursor = false;
                 self.snapshot = Some(*snapshot);
+                if let Some(visible) = self.snapshot.as_ref().and_then(|s| s.visible.as_ref()) {
+                    self.selection.retain_visible(&SnapshotRows(visible));
+                } else {
+                    self.selection = Selection::default();
+                }
             }
             LogEvent::Metadata { loaded, failed } => {
-                self.cache.forget(&failed);
-                self.cache.put(loaded);
+                if !failed.is_empty() {
+                    log::debug!("metadata of {} commits failed to load", failed.len());
+                }
+                self.cache.complete(loaded, &failed);
             }
             LogEvent::Busy(busy) => {
                 self.busy = busy;
@@ -182,16 +193,21 @@ impl LogModel {
         cx.notify();
     }
 
-    /// The commit and print elements of `row`.
+    /// The commit and print elements of `row`; `None` if there is no such row (e.g. a row index
+    /// from an older snapshot).
     pub fn row(&self, row: usize) -> Option<(VcsLogCommitStorageIndex, Vec<GraphPrintElement>)> {
         let visible = self.snapshot.as_ref()?.visible.as_ref()?;
-        let info = visible.get_row_info(row as i32);
+        let row = i32::try_from(row)
+            .ok()
+            .filter(|&r| r < visible.visible_commit_count())?;
+        let info = visible.get_row_info(row);
         Some((info.commit(), info.print_elements()))
     }
 
     /// Whether the first `rows` rows have their metadata (for timing logs).
     pub fn metadata_loaded_for(&mut self, rows: usize) -> bool {
         rows > 0
+            && rows <= self.row_count()
             && (0..rows).all(|r| {
                 self.row(r)
                     .is_some_and(|(c, _)| matches!(self.cache.get(c), Lookup::Loaded(_)))
@@ -225,6 +241,7 @@ impl LogModel {
         Some(f(&mut self.selection, &SnapshotRows(visible)))
     }
 
+    /// A click on `row` (ignored if out of range).
     pub fn click_row(&mut self, row: usize, toggle: bool, extend: bool) {
         self.with_rows(|s, rows| s.click(row, toggle, extend, rows));
     }
@@ -248,6 +265,7 @@ impl LogModel {
     }
 
     /// Mouse over the graph of `row` at `(x, y)` (row coordinates). Returns whether to repaint.
+    /// A row out of range counts as no element.
     pub fn hover_graph(&mut self, row: usize, x: f32, y: f32, geometry: &GraphGeometry) -> bool {
         let element = self
             .row(row)
@@ -281,9 +299,17 @@ impl LogModel {
         true
     }
 
-    /// Clicks a print element of the current graph (an arrow jumps to its target).
+    /// Clicks a print element of the current graph (an arrow jumps to its target). Elements the
+    /// current graph doesn't print (e.g. from an older snapshot) are ignored.
     pub fn click_element(&mut self, element: GraphPrintElement) {
-        self.perform(GraphAction::new(Some(element), GraphActionType::MouseClick));
+        use ig_log::print_element::PrintElement as _;
+        let current = usize::try_from(element.row_index())
+            .ok()
+            .and_then(|row| self.row(row))
+            .is_some_and(|(_, elements)| elements.contains(&element));
+        if current {
+            self.perform(GraphAction::new(Some(element), GraphActionType::MouseClick));
+        }
     }
 
     /// Runs an action and handles the answer (`GraphCommitCellController.handleGraphAnswer`).

@@ -8,8 +8,10 @@
 //!   asked for them, so a scroll doesn't re-request rows already being loaded.
 //! - Placeholders of tasks [`MAX_LOADING_TASKS`] or more behind the current one are dropped (the
 //!   background loader is a LIFO queue keeping the newest tasks; older ones are discarded).
+//! - A failed load keeps its placeholders (upstream doesn't remove them either): they age out
+//!   like any other, so a failing commit is not requested again on every frame.
 //! - The cache is bounded ([`CACHE_SIZE`], upstream `maximumSize(10000)`); entries are evicted
-//!   least recently used first.
+//!   least recently used first (every insertion and hit is its own clock tick).
 //!
 //! Deviation: one cache for both upstream maps (top commits are not kept separately).
 
@@ -123,9 +125,11 @@ impl MetadataCache {
         let task = self.current_task;
         self.current_task += 1;
         for &commit in &missing {
+            self.clock += 1;
             self.entries
                 .insert(commit, (Entry::Loading { task }, self.clock));
         }
+        self.evict();
         missing
     }
 
@@ -139,13 +143,15 @@ impl MetadataCache {
         self.evict();
     }
 
-    /// Drops the placeholders of a failed load, so the rows are requested again.
-    pub fn forget(&mut self, commits: &[VcsLogCommitStorageIndex]) {
-        for commit in commits {
-            if let Some((Entry::Loading { .. }, _)) = self.entries.get(commit) {
-                self.entries.remove(commit);
-            }
-        }
+    /// The result of a load task: stores `loaded`; the placeholders of `failed` commits stay
+    /// until they age out (upstream keeps them too), so they aren't re-requested every frame.
+    pub fn complete(
+        &mut self,
+        loaded: impl IntoIterator<Item = (VcsLogCommitStorageIndex, RowMeta)>,
+        failed: &[VcsLogCommitStorageIndex],
+    ) {
+        let _ = failed;
+        self.put(loaded);
     }
 
     fn evict(&mut self) {
@@ -180,11 +186,42 @@ mod tests {
         assert_eq!(cache.get(2), Lookup::Loading);
         // already loading: no new request
         assert!(cache.request([1, 2, 3]).is_empty());
-        cache.put([(2, meta("two"))]);
+        cache.complete([(2, meta("two"))], &[1]);
         assert_eq!(cache.get(2), Lookup::Loaded(Arc::new(meta("two"))));
-        cache.forget(&[1, 2]);
-        assert_eq!(cache.get(1), Lookup::Missing);
-        assert!(matches!(cache.get(2), Lookup::Loaded(_)));
+        assert_eq!(cache.get(1), Lookup::Loading);
+    }
+
+    #[test]
+    fn failed_rows_are_not_requested_again_until_their_placeholder_ages_out() {
+        let mut cache = MetadataCache::new();
+        assert_eq!(cache.request([1, 2]), [1, 2]);
+        cache.complete([], &[1, 2]);
+        // every frame asks for the same rows: no new request
+        for _ in 0..100 {
+            assert!(cache.request([1, 2]).is_empty());
+        }
+        // only other load tasks (scrolling) let the placeholders expire
+        for i in 0..MAX_LOADING_TASKS as i32 {
+            cache.request([10 + i]);
+        }
+        assert_eq!(cache.request([1, 2]), [1, 2]);
+    }
+
+    #[test]
+    fn eviction_drops_exactly_the_excess_and_also_runs_on_request() {
+        let mut cache = MetadataCache::new();
+        // one batch of more than CACHE_SIZE: per-entry ticks, so ties don't drop the batch
+        cache.put((0..CACHE_SIZE as i32 + 5).map(|i| (i, meta("x"))));
+        assert_eq!(cache.len(), CACHE_SIZE);
+        assert_eq!(cache.get(4), Lookup::Missing);
+        assert!(matches!(cache.get(5), Lookup::Loaded(_)));
+        // placeholders count too: a request evicts the least recently used
+        let requested: Vec<i32> = (-10..0).collect();
+        assert_eq!(cache.request(requested.clone()), requested);
+        assert_eq!(cache.len(), CACHE_SIZE);
+        assert!(requested.iter().all(|&c| cache.get(c) == Lookup::Loading));
+        assert!(matches!(cache.get(5), Lookup::Loaded(_))); // touched above
+        assert_eq!(cache.get(6), Lookup::Missing);
     }
 
     #[test]

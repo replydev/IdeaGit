@@ -4,7 +4,11 @@
 //! `MULTIPLE_INTERVAL_SELECTION`): click selects one row, Cmd/Ctrl+click toggles a row,
 //! Shift+click and Shift+arrows extend from the anchor, arrows move the lead and select it.
 //! Upstream restores the selection by commit after a refresh (`VcsLogGraphTable.Selection`);
-//! here the selection *is* the set of commits, so rows are recomputed from the new graph.
+//! here the selection *is* the set of commits, so rows are recomputed from the new graph, and
+//! commits no longer shown are dropped ([`Selection::retain_visible`]).
+//!
+//! An anchor whose commit is no longer shown is replaced by the clicked commit (`JTable` keeps
+//! row indices, which point at other commits after a refresh).
 
 use std::collections::BTreeSet;
 
@@ -46,17 +50,37 @@ impl Selection {
         self.lead.and_then(|c| rows.row(c))
     }
 
-    /// A click on `row`: `toggle` with Cmd/Ctrl, `extend` with Shift.
+    /// A click on `row`: `toggle` with Cmd/Ctrl, `extend` with Shift (`JTable.changeSelection`).
+    /// Ignored if `row` is out of range.
     pub fn click(&mut self, row: usize, toggle: bool, extend: bool, rows: &dyn Rows) {
+        if row >= rows.count() {
+            return;
+        }
         let commit = rows.commit(row);
         if extend {
-            let anchor_row = self.anchor.and_then(|a| rows.row(a)).unwrap_or(row);
-            if !toggle {
-                self.commits.clear();
-            }
+            let anchor_row = match self.anchor.and_then(|a| rows.row(a)) {
+                Some(anchor_row) => anchor_row,
+                None => {
+                    self.anchor = Some(commit);
+                    row
+                }
+            };
+            let anchor_selected = self.anchor.is_some_and(|a| self.commits.contains(&a));
             let (from, to) = (anchor_row.min(row), anchor_row.max(row));
-            self.commits.extend((from..=to).map(|r| rows.commit(r)));
-            self.anchor.get_or_insert(commit);
+            let range = (from..=to).map(|r| rows.commit(r));
+            if !toggle {
+                // `setSelectionInterval(anchor, row)`
+                self.commits.clear();
+                self.commits.extend(range);
+            } else if anchor_selected {
+                // `addSelectionInterval(anchor, row)`
+                self.commits.extend(range);
+            } else {
+                // `removeSelectionInterval(anchor, row)`
+                for c in range {
+                    self.commits.remove(&c);
+                }
+            }
         } else if toggle {
             if !self.commits.remove(&commit) {
                 self.commits.insert(commit);
@@ -96,7 +120,12 @@ impl Selection {
         self.commits = (0..rows.count()).map(|r| rows.commit(r)).collect();
     }
 
-    /// Selects only `row` (a jump).
+    /// Drops the commits that `rows` no longer shows (after a new snapshot).
+    pub fn retain_visible(&mut self, rows: &dyn Rows) {
+        self.commits.retain(|&c| rows.row(c).is_some());
+    }
+
+    /// Selects only `row` (a jump); ignored if out of range.
     pub fn select_only(&mut self, row: usize, rows: &dyn Rows) {
         self.click(row, false, false, rows);
     }
@@ -153,6 +182,54 @@ mod tests {
         assert_eq!(rows_of(&s), [2]);
         s.select_all(&rows);
         assert_eq!(s.len(), 4);
+    }
+
+    #[test]
+    fn out_of_range_rows_are_ignored() {
+        let rows = Linear(3);
+        let mut s = Selection::default();
+        s.click(1, false, false, &rows);
+        s.click(3, false, false, &rows);
+        s.click(usize::MAX, true, true, &rows);
+        s.select_only(10, &rows);
+        assert_eq!(rows_of(&s), [1]);
+        assert_eq!(s.lead_row(&rows), Some(1));
+    }
+
+    #[test]
+    fn invisible_anchor_is_replaced_by_the_clicked_commit() {
+        let mut s = Selection::default();
+        s.click(8, false, false, &Linear(10)); // anchor: commit 108
+        // after a refresh only 5 rows are shown: Shift+click extends from the clicked row
+        let rows = Linear(5);
+        s.retain_visible(&rows);
+        assert!(s.is_empty());
+        s.click(2, false, true, &rows);
+        assert_eq!(rows_of(&s), [2]);
+        s.click(4, false, true, &rows);
+        assert_eq!(rows_of(&s), [2, 3, 4]);
+    }
+
+    #[test]
+    fn toggle_extend_follows_the_anchor_state() {
+        let rows = Linear(10);
+        let mut s = Selection::default();
+        s.click(0, false, false, &rows);
+        s.click(9, true, false, &rows);
+        s.click(2, true, false, &rows); // anchor 2, selected
+        s.click(4, true, true, &rows); // adds 2..=4
+        assert_eq!(rows_of(&s), [0, 2, 3, 4, 9]);
+        s.click(3, true, false, &rows); // anchor 3, now unselected
+        s.click(9, true, true, &rows); // removes 3..=9
+        assert_eq!(rows_of(&s), [0, 2]);
+    }
+
+    #[test]
+    fn retain_visible_drops_hidden_commits() {
+        let mut s = Selection::default();
+        s.select_all(&Linear(6));
+        s.retain_visible(&Linear(4));
+        assert_eq!(rows_of(&s), [0, 1, 2, 3]);
     }
 
     #[test]

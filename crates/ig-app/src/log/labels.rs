@@ -225,8 +225,9 @@ fn shorten_with_ellipsis(text: &str, max_length: usize) -> String {
 fn shorten_ref_name(name: &str, available: f32, measure: &dyn Fn(&str) -> f32) -> String {
     if measure(name) > available && name.chars().count() > MAX_LENGTH {
         let mut name = name.to_string();
+        // `indexOf` counts characters, not bytes
         if let Some(separator) = name.find(SEPARATOR)
-            && separator > TWO_DOTS.len()
+            && name[..separator].chars().count() > TWO_DOTS.chars().count()
         {
             name = format!("{TWO_DOTS}{}", &name[separator..]);
         }
@@ -519,6 +520,17 @@ mod tests {
             shorten_ref_name(name, 0.0, &measure).chars().count(),
             MAX_LENGTH
         );
+    }
+
+    #[test]
+    fn separator_position_is_counted_in_chars() {
+        // 2 chars (4 bytes) before the separator: not more than `..`, so the prefix stays
+        let name = "\u{e9}\u{e9}/a-very-long-branch-name-indeed";
+        let short = shorten_ref_name(name, 0.0, &measure);
+        assert!(short.starts_with("\u{e9}\u{e9}/a-very"), "{short}");
+        // 3 chars: replaced
+        let name = "\u{e9}\u{e9}x/a-very-long-branch-name-indeed";
+        assert!(shorten_ref_name(name, 0.0, &measure).starts_with("../a-very"));
     }
 
     #[test]

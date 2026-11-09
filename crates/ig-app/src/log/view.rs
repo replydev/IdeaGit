@@ -158,6 +158,8 @@ impl LogView {
         model.update(cx, |model, cx| {
             model.request_metadata(range.clone());
             let hand = model.hand_cursor;
+            // row indices captured by the handlers are only valid for this snapshot
+            let generation = model.generation;
             let snapshot = model.snapshot();
             let recommended_width = snapshot.map_or(0, |s| s.recommended_width);
             let mut rows = Vec::with_capacity(range.len());
@@ -269,7 +271,9 @@ impl LogView {
                             );
                             let g = geometry_move.clone();
                             let _ = view_move.update(cx, |view, cx| {
-                                if view.model.update(cx, |m, _| m.hover_graph(row, x, y, &g)) {
+                                if view.model.update(cx, |m, _| {
+                                    m.generation == generation && m.hover_graph(row, x, y, &g)
+                                }) {
                                     cx.notify();
                                 }
                             });
@@ -288,8 +292,9 @@ impl LogView {
                             let g = geometry_down.clone();
                             let handled = view_down
                                 .update(cx, |view, cx| {
-                                    let handled =
-                                        view.model.update(cx, |m, _| m.click_graph(row, x, y, &g));
+                                    let handled = view.model.update(cx, |m, _| {
+                                        m.generation == generation && m.click_graph(row, x, y, &g)
+                                    });
                                     cx.notify();
                                     handled
                                 })
@@ -344,8 +349,10 @@ impl LogView {
                             let _ = view_click.update(cx, |view, cx| {
                                 window.focus(&view.focus, cx);
                                 view.model.update(cx, |m, cx| {
-                                    m.click_row(row, toggle, extend);
-                                    cx.notify();
+                                    if m.generation == generation {
+                                        m.click_row(row, toggle, extend);
+                                        cx.notify();
+                                    }
                                 });
                             });
                         })
