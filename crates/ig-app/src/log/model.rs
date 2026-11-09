@@ -49,7 +49,8 @@ pub struct LogModel {
     pub scroll: UniformListScrollHandle,
     hovered_element: Option<GraphPrintElement>,
     pub hand_cursor: bool,
-    /// Bumped on every snapshot; rows built for an older one are stale.
+    /// Bumped whenever rows change (a new snapshot, or a graph action that collapsed or expanded
+    /// edges); row indices captured by painted rows of an older generation are stale.
     pub generation: u64,
     /// When the worker started, for the "first rows painted" log line.
     pub started: std::time::Instant,
@@ -165,7 +166,7 @@ impl LogModel {
                     snapshot.data.is_full(),
                     self.started.elapsed()
                 );
-                self.generation = snapshot.generation;
+                self.generation += 1;
                 self.hovered_element = None;
                 self.hand_cursor = false;
                 self.snapshot = Some(*snapshot);
@@ -252,6 +253,43 @@ impl LogModel {
         }
     }
 
+    /// Home / End (`selectFirstRow` / `selectLastRow`): the first or last row, with or without a
+    /// selection.
+    pub fn select_first(&mut self) {
+        self.move_to(0);
+    }
+
+    pub fn select_last(&mut self) {
+        self.move_to(usize::MAX);
+    }
+
+    fn move_to(&mut self, row: usize) {
+        if let Some(Some(row)) = self.with_rows(|s, rows| s.move_to(row, rows)) {
+            self.scroll.scroll_to_item(row, ScrollStrategy::Nearest);
+        }
+    }
+
+    /// Rows that fit the table's viewport (Page Up / Page Down step), from the last layout; 1
+    /// before the table was laid out.
+    pub fn page_rows(&self) -> usize {
+        let state = self.scroll.0.borrow();
+        let viewport = f32::from(state.base_handle.bounds().size.height);
+        let row = state
+            .last_item_size
+            .map_or(0.0, |size| f32::from(size.item.height));
+        if row > 0.0 && viewport > row {
+            (viewport / row).floor() as usize
+        } else {
+            1
+        }
+    }
+
+    /// Page Up / Page Down: moves the lead by a viewport of rows.
+    pub fn move_page(&mut self, down: bool) {
+        let page = self.page_rows() as isize;
+        self.move_selection(if down { page } else { -page }, false);
+    }
+
     pub fn select_all(&mut self) {
         self.with_rows(|s, rows| s.select_all(rows));
     }
@@ -275,6 +313,17 @@ impl LogModel {
         }
         self.hovered_element = element.clone();
         self.perform(GraphAction::new(element, GraphActionType::MouseOver))
+    }
+
+    /// The pointer is over `row` but outside its graph: drops the hover if it was on that row's
+    /// graph (moving from the graph to the subject keeps no edge highlighted or hand cursor).
+    pub fn left_graph_of(&mut self, row: usize) -> bool {
+        use ig_log::print_element::PrintElement as _;
+        let on_row = self
+            .hovered_element
+            .as_ref()
+            .is_some_and(|e| usize::try_from(e.row_index()).ok() == Some(row));
+        on_row && self.unhover_graph()
     }
 
     /// The mouse left the graph.
@@ -320,6 +369,9 @@ impl LogModel {
         let answer = visible.action_controller().perform_action(action);
         if let Some(updater) = answer.graph_updater {
             visible.run_graph_updater(updater);
+            // rows may have moved: handlers painted for the old rows must not act on new ones
+            self.generation += 1;
+            self.hovered_element = None;
         }
         if let Some(cursor) = answer.cursor_to_set {
             self.hand_cursor = cursor == Cursor::Hand;

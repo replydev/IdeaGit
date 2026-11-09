@@ -22,6 +22,10 @@ static BUNDLES: &[(&str, &str)] = &[
         include_str!("../../../assets/strings/VcsBundle.properties"),
     ),
     (
+        "IdeBundle",
+        include_str!("../../../assets/strings/IdeBundle.properties"),
+    ),
+    (
         "UtilBundle",
         include_str!("../../../assets/strings/UtilBundle.properties"),
     ),
@@ -57,6 +61,12 @@ pub fn message(bundle: &str, key: &str, args: &[&str]) -> String {
         return raw;
     }
     format_message(&raw, args)
+}
+
+/// A button text without its mnemonic marker (`&`, written `\\&` in some bundles): GPUI buttons
+/// have no mnemonics.
+pub fn without_mnemonic(text: &str) -> String {
+    text.replace("\\&", "").replace('&', "")
 }
 
 /// Parses `.properties` text: `key=value` / `key: value` lines, `#`/`!` comments.
@@ -224,6 +234,13 @@ mod tests {
         assert_eq!(format_message(pattern, &["1"]), "A minute ago");
         assert_eq!(format_message(pattern, &["42"]), "42 minutes ago");
         assert_eq!(format_message(pattern, &["61"]), "1 hour ago");
+    }
+
+    #[test]
+    fn mnemonics_are_dropped() {
+        let text = super::text("IdeBundle", "button.remove.from.list");
+        assert_eq!(without_mnemonic(&text), "Remove From List");
+        assert_eq!(without_mnemonic("&Open"), "Open");
     }
 
     #[test]

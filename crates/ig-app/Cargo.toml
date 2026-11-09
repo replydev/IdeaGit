@@ -10,7 +10,7 @@ name = "ideagit"
 path = "src/main.rs"
 
 [features]
-# `cargo xtask screenshots`: headless rendering of the Log to PNG (GPUI test support).
+# `cargo xtask screenshots`: headless rendering of the Log to PNG (GPUI test support; macOS only).
 screenshots = ["gpui/test-support", "gpui_platform/test-support", "dep:image"]
 
 [dependencies]

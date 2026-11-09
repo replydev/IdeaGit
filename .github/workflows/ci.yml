@@ -34,7 +34,7 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
       # The GPUI UI tests use TestAppContext (no display, no GPU); `cargo xtask screenshots`
-      # needs a GPU and is run by hand.
+      # needs a GPU and macOS (GPUI's only headless renderer) and is run by hand.
       - run: cargo test --locked --all
 
   msrv:

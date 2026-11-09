@@ -36,3 +36,11 @@ GitBundle git.executable.validation.error.version.message
 # VCS tool windows
 VcsBundle vcs.console.toolwindow.display.name
 VcsBundle toolwindow.stripe.Commit
+
+# Status bar branch widget (GitBranchUtil.getDisplayableBranchText)
+GitBundle git.status.bar.widget.text.unknown
+
+# Reopening a recent project whose folder is gone (ReopenProjectAction.showReopenDialog)
+IdeBundle message.the.path.0.does.not.exist.maybe.on.remote
+IdeBundle dialog.title.reopen.project
+IdeBundle button.remove.from.list

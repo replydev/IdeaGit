@@ -66,6 +66,8 @@ pub struct RepoSummary {
     pub root: VcsRoot,
     /// `None` when HEAD is detached or there are no commits.
     pub current_branch: Option<String>,
+    /// The full hash of HEAD; `None` before the first commit.
+    pub head: Option<String>,
     pub remotes: Vec<String>,
 }
 
@@ -509,6 +511,7 @@ impl SnapshotThread {
                 RepoSummary {
                     root: root.clone(),
                     current_branch: repo.current_branch_name().map(str::to_string),
+                    head: repo.state.current_revision.as_ref().map(|h| h.to_string()),
                     remotes: repo.remotes.iter().map(|r| r.name.clone()).collect(),
                 }
             })

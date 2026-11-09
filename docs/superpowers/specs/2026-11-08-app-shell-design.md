@@ -150,7 +150,7 @@ Dependency direction: `ig-app` → `ig-ui-kit`, `ig-git`, `ig-log`. `ig-ui-kit` 
   - the Log scrolls and selects
   - an arrow click jumps
   - Refresh triggers the worker
-- **Screenshots.** `cargo xtask screenshots` renders a fixture repo's Log in light and dark for side-by-side review. It is run by hand.
+- **Screenshots.** `cargo xtask screenshots` renders a fixture repo's Log in light and dark for side-by-side review. It is run by hand, on macOS only (at the pinned GPUI revision only macOS has a headless renderer).
 - **Manual checklist** (`docs/app-shell-checklist.md`):
   - open a real repo
   - scroll a 50k-commit history (the Plan 2c perf fixture)

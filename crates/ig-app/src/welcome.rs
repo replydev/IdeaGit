@@ -143,7 +143,11 @@ impl Render for Welcome {
                         .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child(name))
                         .child(div().text_color(color(t.secondary_foreground)).child(full)),
                 )
-                .on_click(move |_, _, cx| open_project(&path, cx))
+                .on_click(move |_, _, cx| {
+                    let path = path.clone();
+                    // outside this window's update: `open_project` may prompt in it
+                    cx.defer(move |cx| open_project(&path, cx));
+                })
         });
         div()
             .id("welcome")
@@ -264,11 +268,16 @@ pub fn close(cx: &mut App) {
     }
 }
 
-/// Whether the welcome window was open (and is now closed); clears the record.
-pub fn take_open(cx: &mut App) -> bool {
-    let was_open = cx
-        .try_global::<WelcomeWindow>()
-        .is_some_and(|w| w.0.is_some());
-    cx.set_global(WelcomeWindow(None));
-    was_open
+/// The welcome window, if open.
+pub fn handle(cx: &App) -> Option<AnyWindowHandle> {
+    cx.try_global::<WelcomeWindow>().and_then(|w| w.0)
+}
+
+/// Whether `closed` is the welcome window; if so, forgets it.
+pub fn forget_if(closed: gpui::WindowId, cx: &mut App) -> bool {
+    let is_welcome = handle(cx).is_some_and(|h| h.window_id() == closed);
+    if is_welcome {
+        cx.set_global(WelcomeWindow(None));
+    }
+    is_welcome
 }

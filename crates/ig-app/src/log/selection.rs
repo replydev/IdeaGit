@@ -115,6 +115,18 @@ impl Selection {
         Some(target)
     }
 
+    /// Moves the lead to `row` (clamped to the last row) and selects only it: Home / End, which
+    /// don't depend on a current lead. Returns the row, to scroll to.
+    pub fn move_to(&mut self, row: usize, rows: &dyn Rows) -> Option<usize> {
+        let count = rows.count();
+        if count == 0 {
+            return None;
+        }
+        let target = row.min(count - 1);
+        self.click(target, false, false, rows);
+        Some(target)
+    }
+
     /// Selects every row (`$SelectAll`).
     pub fn select_all(&mut self, rows: &dyn Rows) {
         self.commits = (0..rows.count()).map(|r| rows.commit(r)).collect();
@@ -222,6 +234,18 @@ mod tests {
         s.click(3, true, false, &rows); // anchor 3, now unselected
         s.click(9, true, true, &rows); // removes 3..=9
         assert_eq!(rows_of(&s), [0, 2]);
+    }
+
+    #[test]
+    fn home_and_end_without_a_selection() {
+        let rows = Linear(5);
+        let mut s = Selection::default();
+        assert_eq!(s.move_to(0, &rows), Some(0));
+        assert_eq!(rows_of(&s), [0]);
+        let mut s = Selection::default();
+        assert_eq!(s.move_to(usize::MAX, &rows), Some(4));
+        assert_eq!(rows_of(&s), [4]);
+        assert_eq!(Selection::default().move_to(0, &Linear(0)), None);
     }
 
     #[test]

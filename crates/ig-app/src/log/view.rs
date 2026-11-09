@@ -16,10 +16,10 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, Context, Entity, EventEmitter, FocusHandle, Focusable, Font, Hsla,
-    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement,
-    Render, SharedString, StatefulInteractiveElement, Styled, TextRun, Window, canvas, div, font,
-    px, uniform_list,
+    AnyElement, App, Context, CursorStyle, Entity, EventEmitter, FocusHandle, Focusable, Font,
+    HitboxBehavior, Hsla, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
+    MouseMoveEvent, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
+    TextRun, Window, canvas, div, font, px, uniform_list,
 };
 use gpui_component::dock::PanelEvent;
 use ig_log::data::VcsLogRefManager;
@@ -153,15 +153,27 @@ impl LogView {
         let loading = SharedString::from("Loading\u{2026}");
         let detached = strings::text("VcsLogBundle", "vcs.log.references.detached.head");
         let view = cx.entity().downgrade();
+        // per-frame constants of the label style (the background varies by row)
+        let warning_icon = ig_ui_kit::icons::path("general/warning", theme.dark);
+        let (label_foreground, label_warning, label_warning_icon) = (
+            color(t.log_reference_foreground),
+            color(t.banner_warning_border),
+            color(t.ref_head),
+        );
+        let dark_graph_outline = if theme.dark { t.foreground >> 8 } else { 0 };
 
         let model = self.model.clone();
         model.update(cx, |model, cx| {
             model.request_metadata(range.clone());
             let hand = model.hand_cursor;
-            // row indices captured by the handlers are only valid for this snapshot
+            // row indices captured by the handlers are only valid for this generation of rows
             let generation = model.generation;
-            let snapshot = model.snapshot();
-            let recommended_width = snapshot.map_or(0, |s| s.recommended_width);
+            let Some(snapshot) = model.snapshot() else {
+                return Vec::new();
+            };
+            let recommended_width = snapshot.recommended_width;
+            let data = snapshot.data.clone();
+            let repos = snapshot.repos.clone();
             let mut rows = Vec::with_capacity(range.len());
             for row in range {
                 let Some((commit, elements)) = model.row(row) else {
@@ -174,25 +186,20 @@ impl LogView {
                 let selected = model.is_selected(commit);
                 let row_colors = colors.row(selected, focused, false);
                 let graph_width = geometry.graph_width(&elements, recommended_width);
-                let shapes = geometry.shapes(
-                    &elements,
-                    |id| palette.color(id),
-                    if theme.dark { t.foreground >> 8 } else { 0 },
-                );
+                let shapes = geometry.shapes(&elements, |id| palette.color(id), dark_graph_outline);
 
                 // labels: refs sorted by the root's ref manager, grouped like `groupForTable`
-                let snapshot = model.snapshot().expect("rows come from a snapshot");
-                let mut refs = snapshot.data.refs_model().refs_to_commit(commit);
+                let mut refs = data.refs_model().refs_to_commit(commit);
                 let labels = if refs.is_empty() {
                     Labels::default()
                 } else {
                     let root = refs[0].root().clone();
-                    if let Some(provider) = snapshot.data.log_providers().get(&root) {
+                    if let Some(provider) = data.log_providers().get(&root) {
                         let manager: std::sync::Arc<dyn VcsLogRefManager> =
                             provider.reference_manager();
                         manager.sort_labels(&mut refs);
                     }
-                    let repo = snapshot.repo(&root);
+                    let repo = repos.iter().find(|r| r.root == root);
                     let context = RepoRefsContext {
                         current_branch: repo.and_then(|r| r.current_branch.as_deref()),
                         remotes: repo.map(|r| r.remotes.as_slice()).unwrap_or(&[]),
@@ -220,12 +227,12 @@ impl LogView {
                     font: ui_font.clone(),
                     font_size: px(label_size),
                     height: label_height,
-                    foreground: color(t.log_reference_foreground),
-                    warning_foreground: color(t.banner_warning_border),
+                    foreground: label_foreground,
+                    warning_foreground: label_warning,
                     background: row_colors.background,
                     color_of: ref_color,
-                    warning_icon: ig_ui_kit::icons::path("general/warning", theme.dark),
-                    warning_icon_color: color(t.ref_head),
+                    warning_icon: warning_icon.clone(),
+                    warning_icon_color: label_warning_icon,
                 };
 
                 let (subject, author, date, hash): (
@@ -257,31 +264,43 @@ impl LogView {
                 let (view_move, view_down) = (view.clone(), view.clone());
                 let labels_width = labels.width;
 
+                // the hitbox follows the list's clipping: rows scrolled out of view get no events
                 let graph = canvas(
-                    |_, _, _| {},
-                    move |bounds, _, window, cx| {
+                    |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
+                    move |bounds, hitbox, window, cx| {
                         paint_shapes(&shapes, bounds, background, window, cx);
-                        window.on_mouse_event(move |e: &MouseMoveEvent, phase, _, cx| {
-                            if !phase.bubble() || !bounds.contains(&e.position) {
+                        if hand {
+                            window.set_cursor_style(CursorStyle::PointingHand, &hitbox);
+                        }
+                        let hitbox_down = hitbox.clone();
+                        window.on_mouse_event(move |e: &MouseMoveEvent, phase, window, cx| {
+                            if !phase.bubble() {
                                 return;
                             }
+                            let inside = hitbox.is_hovered(window);
                             let (x, y): (f32, f32) = (
                                 (e.position.x - bounds.origin.x).into(),
                                 (e.position.y - bounds.origin.y).into(),
                             );
                             let g = geometry_move.clone();
                             let _ = view_move.update(cx, |view, cx| {
-                                if view.model.update(cx, |m, _| {
-                                    m.generation == generation && m.hover_graph(row, x, y, &g)
-                                }) {
+                                let changed = view.model.update(cx, |m, _| {
+                                    m.generation == generation
+                                        && if inside {
+                                            m.hover_graph(row, x, y, &g)
+                                        } else {
+                                            m.left_graph_of(row)
+                                        }
+                                });
+                                if changed {
                                     cx.notify();
                                 }
                             });
                         });
-                        window.on_mouse_event(move |e: &MouseDownEvent, phase, _, cx| {
+                        window.on_mouse_event(move |e: &MouseDownEvent, phase, window, cx| {
                             if !phase.bubble()
                                 || e.button != MouseButton::Left
-                                || !bounds.contains(&e.position)
+                                || !hitbox_down.is_hovered(window)
                             {
                                 return;
                             }
@@ -365,7 +384,6 @@ impl LogView {
                                 .flex()
                                 .items_center()
                                 .overflow_hidden()
-                                .when(hand, |d| d.cursor_pointer())
                                 .on_hover({
                                     let view = view.clone();
                                     move |hovered, _, cx| {
@@ -486,10 +504,10 @@ impl Render for LogView {
             on(|m| m.move_selection(1, false)),
             on(|m| m.move_selection(-1, true)),
             on(|m| m.move_selection(1, true)),
-            on(|m| m.move_selection(-20, false)),
-            on(|m| m.move_selection(20, false)),
-            on(|m| m.move_selection(isize::MIN / 2, false)),
-            on(|m| m.move_selection(isize::MAX / 2, false)),
+            on(|m| m.move_page(false)),
+            on(|m| m.move_page(true)),
+            on(|m| m.select_first()),
+            on(|m| m.select_last()),
             on(|m| m.select_all()),
         );
         div()

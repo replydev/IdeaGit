@@ -18,7 +18,9 @@ tasks:
   screenshots [--repo <dir>] [--out <dir>]
       Renders the Log of <repo> (default: this workspace) in the light and dark themes to
       <out>/ideagit-log-{light,dark}.png (default: docs/ui-reference), headless (no display or
-      screen-recording permission needed). Builds ig-app with its `screenshots` feature.";
+      screen-recording permission needed). macOS only: GPUI's headless renderer is Metal at the
+      pinned revision. Relative paths are taken from the current directory. Builds ig-app with
+      its `screenshots` feature; IDEAGIT_SCROLL_BENCH=1 also prints a scroll benchmark.";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -116,15 +118,22 @@ fn import_ui(args: &[String]) -> Result<()> {
 
 /// `screenshots`: runs `ideagit --screenshots <out> <repo>` (feature `screenshots`, release).
 fn screenshots(args: &[String]) -> Result<()> {
+    if !cfg!(target_os = "macos") {
+        return Err(Error(
+            "screenshots: GPUI's headless renderer is macOS-only at the pinned revision".into(),
+        ));
+    }
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let mut repo = root.clone();
     let mut out = root.join("docs/ui-reference");
+    // cargo runs from `root`: paths given relative to the caller's directory are made absolute
+    let cwd = std::env::current_dir().map_err(|e| Error(format!("current directory: {e}")))?;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         let value = || Error(format!("{arg} needs a value"));
         match arg.as_str() {
-            "--repo" => repo = it.next().ok_or_else(value)?.into(),
-            "--out" => out = it.next().ok_or_else(value)?.into(),
+            "--repo" => repo = cwd.join(it.next().ok_or_else(value)?),
+            "--out" => out = cwd.join(it.next().ok_or_else(value)?),
             other => return Err(Error(format!("unknown argument {other}\n{USAGE}"))),
         }
     }

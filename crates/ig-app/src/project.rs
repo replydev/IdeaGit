@@ -6,14 +6,15 @@
 //! at the bottom of the left stripe. Refreshes the log on window activation (upstream refreshes on
 //! frame activation through the VFS) and after commands IdeaGit runs.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, AppContext as _, Context, Entity, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, TitlebarOptions,
-    Window, WindowBounds, WindowOptions, div, point, px, size,
+    AnyElement, AnyView, AnyWindowHandle, App, AppContext as _, Context, Entity, FocusHandle,
+    Focusable, InteractiveElement, IntoElement, ParentElement, Render, SharedString, Styled,
+    Subscription, TitlebarOptions, Window, WindowBounds, WindowOptions, div, point, px, size,
 };
 use gpui_component::dock::{DockArea, DockLayout, DockPlacement, PanelEvent, panel_handle};
 use ig_git::console::{ConsoleEvent, ConsoleSink};
@@ -39,6 +40,13 @@ use crate::strings;
 /// The bottom dock's initial height. IdeaGit has no editor yet, so the Log gets most of the frame
 /// (IntelliJ's default bottom tool window weight is 0.33).
 const BOTTOM_DOCK_HEIGHT: f32 = 560.0;
+
+/// `VcsLogUtil.SHORT_HASH_LENGTH`.
+const SHORT_HASH_LENGTH: usize = 8;
+
+/// Window activations closer than this refresh the log once (switching windows back and forth
+/// shouldn't queue refreshes).
+const ACTIVATION_REFRESH_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Forwards console events and refreshes the log after a non-silent (IdeaGit-run) command
 /// finishes (upstream: `GitRepository` updates after write commands trigger a log refresh).
@@ -85,7 +93,11 @@ impl gpui_component::dock::BasePanel for EmptyEditor {
 impl gpui_component::dock::Panel for EmptyEditor {}
 impl Render for EmptyEditor {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div().size_full().bg(color(cx.ij().tokens.panel_background))
+        // focusable, so hiding a tool window has somewhere to return focus to
+        div()
+            .track_focus(&self.0)
+            .size_full()
+            .bg(color(cx.ij().tokens.panel_background))
     }
 }
 
@@ -122,6 +134,11 @@ pub struct ProjectWindow {
     pub log: Entity<LogModel>,
     pub log_view: Entity<LogView>,
     pub console: Entity<ConsoleView>,
+    editor: Entity<EmptyEditor>,
+    /// The window's own focus target: actions and menus keep working when nothing inside has
+    /// focus.
+    focus: FocusHandle,
+    last_activation_refresh: Option<Instant>,
     notices: Vec<Notice>,
     next_notice: usize,
     menu_bar: Option<Entity<gpui_component::menu::AppMenuBar>>,
@@ -150,6 +167,9 @@ impl ProjectWindow {
         ));
         let log = cx.new(|cx| LogModel::new(git, roots, cx));
         let log_view = cx.new(|cx| LogView::new(log.clone(), cx));
+        // the "Show Read Commands in Console" toggle is app-wide
+        let show_read = cx.try_global::<ShowReadCommands>().is_some_and(|s| s.0);
+        console.update(cx, |c, cx| c.set_show_silent(show_read, cx));
         let console_panel = cx.new(|_| ConsolePanel {
             view: console.clone(),
         });
@@ -165,7 +185,7 @@ impl ProjectWindow {
         );
         let dock = cx.new(|cx| DockArea::new("project", None, window, cx).with_renderer(renderer));
         dock.update(cx, |dock, cx| {
-            dock.set_center(DockLayout::tabs().panel(editor), window, cx);
+            dock.set_center(DockLayout::tabs().panel(editor.clone()), window, cx);
             dock.set_dock(
                 DockPlacement::Bottom,
                 DockLayout::tabs()
@@ -202,7 +222,16 @@ impl ProjectWindow {
             }),
             cx.observe_window_activation(window, |this, window, cx| {
                 if window.is_window_active() {
-                    this.log.update(cx, |log, _| log.refresh());
+                    this.refresh_on_activation(Instant::now(), cx);
+                }
+            }),
+            cx.observe_global::<ShowReadCommands>(|this, cx| {
+                let show = cx.global::<ShowReadCommands>().0;
+                this.console.update(cx, |c, cx| c.set_show_silent(show, cx));
+            }),
+            cx.observe_global::<crate::menus::MenusChanged>(|this, cx| {
+                if let Some(bar) = &this.menu_bar {
+                    bar.update(cx, |bar, cx| bar.reload(cx));
                 }
             }),
             cx.observe_window_appearance(window, |_, window, cx| {
@@ -220,6 +249,9 @@ impl ProjectWindow {
             log,
             log_view,
             console,
+            editor,
+            focus: cx.focus_handle(),
+            last_activation_refresh: None,
             notices: Vec::new(),
             next_notice: 0,
             menu_bar,
@@ -256,8 +288,27 @@ impl ProjectWindow {
         }
         if open {
             window.focus(&self.log_view.focus_handle(cx), cx);
+        } else {
+            // `HideActiveWindow` returns focus to the editor
+            window.focus(&self.editor.focus_handle(cx), cx);
         }
         cx.notify();
+    }
+
+    /// Refreshes the log when the window is activated, at most once per
+    /// `ACTIVATION_REFRESH_INTERVAL` (500 ms) and not while it is loading or refreshing anyway. Returns
+    /// whether it refreshed.
+    pub fn refresh_on_activation(&mut self, now: Instant, cx: &mut Context<Self>) -> bool {
+        let recent = self
+            .last_activation_refresh
+            .is_some_and(|last| now.saturating_duration_since(last) < ACTIVATION_REFRESH_INTERVAL);
+        let log = self.log.read(cx);
+        if recent || log.is_busy() || log.state() == crate::log::model::LogState::Loading {
+            return false;
+        }
+        self.last_activation_refresh = Some(now);
+        self.log.update(cx, |log, _| log.refresh());
+        true
     }
 
     fn project_name(&self) -> String {
@@ -267,30 +318,20 @@ impl ProjectWindow {
             .unwrap_or_else(|| self.path.display().to_string())
     }
 
-    fn branch_text(&self, cx: &App) -> Option<String> {
-        let snapshot = self.log.read(cx).snapshot()?;
-        let multi = snapshot.repos.len() > 1;
-        let parts: Vec<String> = snapshot
-            .repos
+    /// The branch widget text (`GitBranchWidget` / `GitBranchUtil.getDisplayableBranchText`):
+    /// the branch of one repository (upstream guesses it from the selected file; here the
+    /// project folder's own repository, else the first), or the short hash of a detached HEAD.
+    pub fn branch_text(&self, cx: &App) -> Option<String> {
+        let repos = &self.log.read(cx).snapshot()?.repos;
+        let repo = repos
             .iter()
-            .map(|r| {
-                let branch = r.current_branch.clone().unwrap_or_else(|| {
-                    strings::text("VcsLogBundle", "vcs.log.references.detached.head")
-                });
-                if multi {
-                    format!(
-                        "{}: {branch}",
-                        r.root
-                            .file_name()
-                            .map(|n| n.to_string_lossy())
-                            .unwrap_or_default()
-                    )
-                } else {
-                    branch
-                }
-            })
-            .collect();
-        (!parts.is_empty()).then(|| parts.join(", "))
+            .find(|r| *r.root == *self.path)
+            .or_else(|| repos.first())?;
+        Some(match (&repo.current_branch, &repo.head) {
+            (Some(branch), _) => branch.clone(),
+            (None, Some(head)) => head.chars().take(SHORT_HASH_LENGTH).collect(),
+            (None, None) => strings::text("GitBundle", "git.status.bar.widget.text.unknown"),
+        })
     }
 
     fn render_toolbar(&self, cx: &App) -> AnyElement {
@@ -388,6 +429,7 @@ impl Render for ProjectWindow {
         let _ = window;
         div()
             .id("project-window")
+            .track_focus(&self.focus)
             .size_full()
             .flex()
             .flex_col()
@@ -406,9 +448,9 @@ impl Render for ProjectWindow {
                 this.set_git_tool_window(false, window, cx)
             }))
             .on_action(cx.listener(|_, _: &CloseProject, window, _| window.remove_window()))
-            .on_action(cx.listener(|this, _: &ToggleShowReadCommands, _, cx| {
-                let show = !this.console.read(cx).show_silent();
-                this.console.update(cx, |c, cx| c.set_show_silent(show, cx));
+            .on_action(cx.listener(|_, _: &ToggleShowReadCommands, _, cx| {
+                // every project window's console follows (observing the global)
+                let show = !cx.try_global::<ShowReadCommands>().is_some_and(|s| s.0);
                 cx.set_global(ShowReadCommands(show));
                 crate::menus::install(cx);
             }))
@@ -435,6 +477,33 @@ impl Render for ProjectWindow {
                     .children(notices),
             )
     }
+}
+
+/// The project window shown by a window's root view (a `Root` wrapping it, or the view itself).
+pub fn project_of(root: AnyView, cx: &App) -> Option<Entity<ProjectWindow>> {
+    match root.downcast::<ProjectWindow>() {
+        Ok(project) => Some(project),
+        Err(root) => root
+            .downcast::<gpui_component::Root>()
+            .ok()?
+            .read(cx)
+            .view()
+            .clone()
+            .downcast::<ProjectWindow>()
+            .ok(),
+    }
+}
+
+/// The window showing the project at `path` (canonical), if one is open. Windows being updated
+/// are skipped.
+pub fn find_window(path: &Path, cx: &mut App) -> Option<AnyWindowHandle> {
+    cx.windows().into_iter().find(|window| {
+        window
+            .update(cx, |root, _, cx| {
+                project_of(root, cx).is_some_and(|p| p.read(cx).path == path)
+            })
+            .unwrap_or(false)
+    })
 }
 
 /// Opens a project window.

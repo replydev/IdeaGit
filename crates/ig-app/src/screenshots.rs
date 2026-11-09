@@ -1,6 +1,11 @@
 //! `cargo xtask screenshots`: renders a repository's Log in the light and dark themes to PNG
 //! without a display or screen-recording permission (GPUI's `HeadlessAppContext` with the
-//! platform's offscreen renderer: Metal on macOS, wgpu on Linux).
+//! platform's offscreen renderer).
+//!
+//! macOS only: at the pinned GPUI revision only macOS has a headless renderer (Metal;
+//! `gpui_platform::current_headless_renderer` is `None` elsewhere), so other platforms fail with
+//! a message. The settings come from a scratch path (the user's `settings.toml` is neither read
+//! nor written) and nothing is logged to `ideagit.log`.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -15,6 +20,16 @@ use crate::project::ProjectWindow;
 
 /// Renders `repo` into `out/ideagit-log-{light,dark}.png`; returns the process exit code.
 pub fn run(out: &Path, repo: &Path) -> i32 {
+    if !cfg!(target_os = "macos") {
+        eprintln!(
+            "screenshots need GPUI's headless renderer, which this GPUI revision only has on macOS"
+        );
+        return 1;
+    }
+    if !repo.is_dir() {
+        eprintln!("{} is not a directory", repo.display());
+        return 1;
+    }
     let repo = repo.canonicalize().unwrap_or_else(|_| repo.to_path_buf());
     if let Err(e) = std::fs::create_dir_all(out) {
         eprintln!("can't create {}: {e}", out.display());
@@ -41,8 +56,13 @@ fn render(repo: &Path, theme: IjTheme, path: &Path) -> Result<Duration, String> 
         gpui_platform::current_headless_renderer,
     );
     cx.allow_parking();
+    // never read: a scratch path, so the user's settings (recent projects, git path) don't leak
+    // into the screenshots and nothing is written to them
+    let settings = std::env::temp_dir()
+        .join(format!("ideagit-screenshots-{}", std::process::id()))
+        .join("settings.toml");
     cx.update(|cx| {
-        crate::init(cx);
+        crate::init_with_settings(settings, cx);
         theme.pin(cx);
     });
     let (executable, version) = match cx.update(|cx| AppState::get(cx).git.clone()) {
@@ -53,6 +73,9 @@ fn render(repo: &Path, theme: IjTheme, path: &Path) -> Result<Duration, String> 
         other => return Err(format!("git is not usable: {other:?}")),
     };
     let roots = ig_git::roots::detect_roots(repo, crate::app::ROOTS_SCAN_DEPTH);
+    if roots.is_empty() {
+        return Err(format!("no git repositories in {}", repo.display()));
+    }
     let repo_path = repo.to_path_buf();
     let window = cx
         .open_window(size(px(1400.0), px(900.0)), move |window, cx| {
@@ -64,23 +87,22 @@ fn render(repo: &Path, theme: IjTheme, path: &Path) -> Result<Duration, String> 
     // wait for the log and the metadata of the first rows (the worker runs on real threads)
     while started.elapsed() < Duration::from_secs(60) {
         cx.run_until_parked();
-        let done = cx
+        let state = cx
             .update_window(window.into(), |root, _, cx| {
                 let project = root.downcast::<ProjectWindow>().ok()?;
                 let log = project.read(cx).log.read(cx);
-                let ready = match log.state() {
-                    LogState::Ready => {
-                        log.row_count() > 0 && log.cache.len() >= log.row_count().min(30)
-                    }
-                    LogState::Loading => false,
-                    _ => true,
-                };
-                Some(ready && !log.is_busy())
+                Some(match log.state() {
+                    // an empty repository is ready as soon as the load finishes
+                    LogState::Ready => Ok(!log.is_busy()
+                        && (log.row_count() == 0 || log.cache.len() >= log.row_count().min(30))),
+                    LogState::Loading => Ok(false),
+                    LogState::NoRoots => Err(format!("no git repositories in {}", repo.display())),
+                    LogState::Error(e) => Err(format!("the log failed to load: {e}")),
+                })
             })
-            .ok()
-            .flatten()
-            .unwrap_or(false);
-        if done {
+            .map_err(|e| e.to_string())?
+            .ok_or("the window doesn't show a project")?;
+        if state? {
             ready_at.get_or_insert(started.elapsed());
             break;
         }
