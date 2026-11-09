@@ -34,6 +34,10 @@ pub enum ConsoleEvent {
 /// Must not run write commands on the same [`crate::runner::Git`]: the per-project write lock is not re-entrant.
 pub trait ConsoleSink: Send + Sync {
     fn event(&self, event: ConsoleEvent);
+
+    /// A silent (read) command started. Upstream never shows these; IdeaGit's console has a debug
+    /// toggle that does. Only the command line is reported, no output. Default: ignored.
+    fn silent_command(&self, _working_dir: &std::path::Path, _command_line: &str) {}
 }
 
 /// Discards all events.

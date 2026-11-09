@@ -284,6 +284,9 @@ impl Git {
                 working_dir: handler.working_dir().to_path_buf(),
                 command_line: handler.printable_command_line(),
             });
+        } else {
+            self.console
+                .silent_command(handler.working_dir(), &handler.printable_command_line());
         }
 
         // Upstream `GitHandlerInputProcessorUtil.writeLines`: the input is written, then stdin closed.
