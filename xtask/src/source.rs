@@ -48,16 +48,6 @@ pub trait Source {
     }
 }
 
-/// Environment variables that would redirect git away from the `-C <repo>` clone.
-const GIT_ENV_REMOVE: [&str; 6] = [
-    "GIT_DIR",
-    "GIT_WORK_TREE",
-    "GIT_INDEX_FILE",
-    "GIT_OBJECT_DIRECTORY",
-    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-    "GIT_COMMON_DIR",
-];
-
 /// A revision of a git repository.
 pub struct GitSource {
     repo: PathBuf,
@@ -88,7 +78,7 @@ impl GitSource {
                 ))
             })?;
         let hash = String::from_utf8_lossy(&out).trim().to_string();
-        if hash.len() < 40 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+        if !matches!(hash.len(), 40 | 64) || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
             bail!("git rev-parse returned {hash:?} for {rev}, expected a commit hash");
         }
         source.commit = hash;
@@ -102,8 +92,12 @@ impl GitSource {
 
     fn git(&self, args: &[&str]) -> Result<Vec<u8>> {
         let mut cmd = Command::new("git");
-        for var in GIT_ENV_REMOVE {
-            cmd.env_remove(var);
+        // Inherited `GIT_*` variables (GIT_DIR, replace refs, config overrides, ...) could redirect
+        // git away from the `-C <repo>` clone or change what it reads.
+        for (var, _) in std::env::vars_os() {
+            if var.to_string_lossy().starts_with("GIT_") {
+                cmd.env_remove(var);
+            }
         }
         let out = cmd
             .arg("-C")

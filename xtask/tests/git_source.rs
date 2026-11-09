@@ -15,7 +15,11 @@ fn fixtures() -> PathBuf {
 fn git(home: &Path, repo: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
         .env_clear()
-        .envs(std::env::var_os("PATH").map(|p| ("PATH", p)))
+        .envs(
+            ["PATH", "SystemRoot"]
+                .into_iter()
+                .filter_map(|k| std::env::var_os(k).map(|v| (k, v))),
+        )
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("HOME", home)
