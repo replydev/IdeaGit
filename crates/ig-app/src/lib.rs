@@ -5,9 +5,86 @@
 //! `reference/upstream-map.toml`.
 
 pub mod actions;
+pub mod app;
 pub mod console;
 pub mod log;
 pub mod logging;
+pub mod menus;
 pub mod paths;
+pub mod project;
 pub mod settings;
 pub mod strings;
+pub mod welcome;
+
+use std::path::PathBuf;
+
+use gpui::App;
+
+use crate::actions::{About, Exit, OpenFile};
+
+/// Registers IdeaGit's globals, theme, fonts, actions, keymap and menus.
+pub fn init(cx: &mut App) {
+    gpui_component::init(cx);
+    if let Err(e) = ig_ui_kit::init(cx.window_appearance(), cx) {
+        ::log::error!("loading fonts: {e}");
+    }
+    app::AppState::init(cx);
+    actions::bind_keys(cx);
+    cx.on_action(|_: &OpenFile, cx| welcome::prompt_open(cx));
+    cx.on_action(|_: &Exit, cx| cx.quit());
+    cx.on_action(|_: &About, cx| show_about(cx));
+    cx.on_action(|action: &menus::OpenRecent, cx| {
+        let path = app::AppState::get(cx)
+            .settings
+            .recent_projects
+            .get(action.index)
+            .cloned();
+        if let Some(path) = path {
+            app::open_project(&path, cx);
+        }
+    });
+    menus::install(cx);
+    cx.on_window_closed(|cx, _| app::on_window_closed(cx))
+        .detach();
+}
+
+fn show_about(cx: &mut App) {
+    let Some(window) = cx
+        .active_window()
+        .or_else(|| cx.windows().into_iter().next())
+    else {
+        return;
+    };
+    let detail = format!(
+        "Version {}\nA Rust port of IntelliJ IDEA's Git features (intellij-community {}).",
+        env!("CARGO_PKG_VERSION"),
+        &crate::UPSTREAM_COMMIT[..7]
+    );
+    let _ = window.update(cx, |_, window, cx| {
+        // the answer isn't needed: the dialog only has OK
+        drop(window.prompt(
+            gpui::PromptLevel::Info,
+            "IdeaGit",
+            Some(&detail),
+            &["OK"],
+            cx,
+        ));
+    });
+}
+
+/// The upstream commit the port matches (`reference/UPSTREAM`).
+pub const UPSTREAM_COMMIT: &str = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98";
+
+/// `ideagit [path]`: opens `path`, or the welcome window.
+pub fn run(path: Option<PathBuf>) {
+    gpui_platform::application()
+        .with_assets(ig_ui_kit::icons::Assets)
+        .run(move |cx: &mut App| {
+            init(cx);
+            match &path {
+                Some(path) => app::open_project(path, cx),
+                None => welcome::open(cx),
+            }
+            cx.activate(true);
+        });
+}

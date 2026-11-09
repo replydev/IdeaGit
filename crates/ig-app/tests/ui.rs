@@ -1,5 +1,5 @@
 //! UI tests with GPUI's `TestAppContext` (headless, no GPU): the Log loads, selects and scrolls,
-//! an arrow click jumps, and Refresh reaches the worker.
+//! an arrow click jumps, Refresh reaches the worker, and the Git tool window toggles.
 //!
 //! The log worker runs on real threads, so the tests allow parking and poll until it answers.
 
@@ -136,4 +136,32 @@ fn no_repositories_state(cx: &mut TestAppContext) {
     let git = Arc::new(Git::detect("git", Arc::new(NullConsole)).unwrap());
     let model = cx.new(|cx| LogModel::new(git, Vec::new(), cx));
     model.read_with(cx, |m, _| assert_eq!(m.state(), LogState::NoRoots));
+}
+
+#[gpui::test]
+fn git_tool_window_toggles(cx: &mut TestAppContext) {
+    let dir = repo(3);
+    // `init` only reads `settings.toml` (nothing is written unless a project is opened via
+    // `open_project`), so the test doesn't touch the user's settings.
+    cx.executor().allow_parking();
+    cx.update(ig_app::init);
+    let root = dir.path().canonicalize().unwrap();
+    let version = Git::detect("git", Arc::new(NullConsole)).unwrap().version();
+    let (project, cx) = cx.add_window_view(|window, cx| {
+        ig_app::project::ProjectWindow::new(
+            root.clone(),
+            vec![root.clone()],
+            "git".into(),
+            version,
+            window,
+            cx,
+        )
+    });
+    project.update_in(cx, |p, window, cx| {
+        assert!(p.is_git_tool_window_open(cx));
+        p.set_git_tool_window(false, window, cx);
+        assert!(!p.is_git_tool_window_open(cx));
+        p.set_git_tool_window(true, window, cx);
+        assert!(p.is_git_tool_window_open(cx));
+    });
 }
