@@ -1,5 +1,6 @@
 # Upstream test data must stay byte-exact (no CRLF conversion on Windows).
 crates/ig-git/tests/fixtures/** -text
 crates/ig-log/tests/fixtures/** -text
+xtask/tests/fixtures/** -text
 assets/** -text
 crates/ig-ui-kit/src/theme/tokens.rs -text
