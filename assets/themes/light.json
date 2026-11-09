@@ -1,0 +1,318 @@
+{
+  "window_background": {
+    "key": "*.background",
+    "value": "#F7F8FAFF"
+  },
+  "panel_background": {
+    "key": "Panel.background (*.background)",
+    "value": "#F7F8FAFF"
+  },
+  "foreground": {
+    "key": "Label.foreground",
+    "value": "#000000FF"
+  },
+  "secondary_foreground": {
+    "key": "Label.infoForeground",
+    "value": "#818594FF"
+  },
+  "disabled_foreground": {
+    "key": "Label.disabledForeground (*.disabledForeground)",
+    "value": "#A8ADBDFF"
+  },
+  "border": {
+    "key": "Borders.color",
+    "value": "#EBECF0FF"
+  },
+  "focus_color": {
+    "key": "Component.focusColor",
+    "value": "#3574F0FF"
+  },
+  "link": {
+    "key": "Link.activeForeground",
+    "value": "#315FBDFF"
+  },
+  "table_background": {
+    "key": "Table.background",
+    "value": "#F7F8FAFF"
+  },
+  "table_foreground": {
+    "key": "Table.foreground",
+    "value": "#000000FF"
+  },
+  "table_selection_background": {
+    "key": "Table.selectionBackground (*.selectionBackground)",
+    "value": "#D4E2FFFF"
+  },
+  "table_selection_foreground": {
+    "key": "Table.selectionForeground (*.selectionForeground)",
+    "value": "#000000FF"
+  },
+  "table_selection_inactive_background": {
+    "key": "Table.selectionInactiveBackground (*.selectionInactiveBackground)",
+    "value": "#DFE1E5FF"
+  },
+  "table_selection_inactive_foreground": {
+    "key": "Table.selectionInactiveForeground (*.selectionInactiveForeground)",
+    "value": "#000000FF"
+  },
+  "table_header_separator": {
+    "key": "TableHeader.bottomSeparatorColor",
+    "value": "#EBECF0FF"
+  },
+  "log_current_branch_background": {
+    "key": "VersionControl.Log.Commit.currentBranchBackground",
+    "value": "#EDF3FFFF"
+  },
+  "log_hovered_background": {
+    "key": "VersionControl.Log.Commit.hoveredBackground",
+    "value": "#E9EAECFF"
+  },
+  "log_unmatched_foreground": {
+    "key": "VersionControl.Log.Commit.unmatchedForeground",
+    "value": "#818594FF"
+  },
+  "log_reference_foreground": {
+    "key": "VersionControl.Log.Commit.Reference.foreground",
+    "value": "#6C707EFF"
+  },
+  "graph_saturation": {
+    "key": "VersionControl.Log.Graph.saturation",
+    "value": 0.6
+  },
+  "graph_brightness": {
+    "key": "VersionControl.Log.Graph.brightness",
+    "value": 0.7
+  },
+  "ref_head": {
+    "key": "VersionControl.GitLog.headIconColor",
+    "value": "#FFAF0FFF"
+  },
+  "ref_local_branch": {
+    "key": "VersionControl.GitLog.localBranchIconColor",
+    "value": "#369650FF"
+  },
+  "ref_remote_branch": {
+    "key": "VersionControl.GitLog.remoteBranchIconColor",
+    "value": "#834DF0FF"
+  },
+  "ref_tag": {
+    "key": "VersionControl.GitLog.tagIconColor",
+    "value": "#6C707EFF"
+  },
+  "ref_other": {
+    "key": "VersionControl.GitLog.otherIconColor",
+    "value": "#6C707EFF"
+  },
+  "tool_window_background": {
+    "key": "ToolWindow.background",
+    "value": "#F7F8FAFF"
+  },
+  "tool_window_header_background": {
+    "key": "ToolWindow.Header.background",
+    "value": "#F7F8FAFF"
+  },
+  "tool_window_header_inactive_background": {
+    "key": "ToolWindow.Header.inactiveBackground",
+    "value": "#F7F8FAFF"
+  },
+  "tool_window_header_tab_hover": {
+    "key": "ToolWindow.HeaderTab.hoverBackground",
+    "value": "#EBECF0FF"
+  },
+  "tool_window_header_tab_selected": {
+    "key": "literal #00000000",
+    "value": "#00000000"
+  },
+  "tool_window_tab_underline": {
+    "key": "ToolWindow.HeaderTab.underlineColor",
+    "value": "#3574F0FF"
+  },
+  "stripe_background": {
+    "key": "ToolWindow.Stripe.background (*.background)",
+    "value": "#F7F8FAFF"
+  },
+  "stripe_separator": {
+    "key": "ToolWindow.Stripe.separatorColor",
+    "value": "#C9CCD6FF"
+  },
+  "stripe_button_hover_background": {
+    "key": "ToolWindow.Button.hoverBackground",
+    "value": "#EBECF0FF"
+  },
+  "stripe_button_selected_background": {
+    "key": "ToolWindow.Button.selectedBackground",
+    "value": "#3574F0FF"
+  },
+  "stripe_button_selected_foreground": {
+    "key": "ToolWindow.Button.selectedForeground",
+    "value": "#FFFFFFFF"
+  },
+  "stripe_button_foreground": {
+    "key": "ToolWindow.Button.foreground",
+    "value": "#5A5D6BFF"
+  },
+  "main_toolbar_background": {
+    "key": "MainToolbar.background",
+    "value": "#27282EFF"
+  },
+  "main_toolbar_foreground": {
+    "key": "MainToolbar.foreground",
+    "value": "#EBECF0FF"
+  },
+  "status_bar_background": {
+    "key": "StatusBar.background",
+    "value": "#F7F8FAFF"
+  },
+  "status_bar_border": {
+    "key": "StatusBar.borderColor",
+    "value": "#EBECF0FF"
+  },
+  "status_bar_widget_foreground": {
+    "key": "StatusBar.Widget.foreground",
+    "value": "#6C707EFF"
+  },
+  "status_bar_widget_hover_background": {
+    "key": "StatusBar.Widget.hoverBackground",
+    "value": "#EBECF0FF"
+  },
+  "notification_background": {
+    "key": "Notification.background",
+    "value": "#27282EFF"
+  },
+  "notification_foreground": {
+    "key": "Notification.foreground",
+    "value": "#F7F8FAFF"
+  },
+  "notification_border": {
+    "key": "Notification.borderColor",
+    "value": "#27282EFF"
+  },
+  "notification_error_foreground": {
+    "key": "Label.errorForeground",
+    "value": "#DB3B4BFF"
+  },
+  "banner_error_background": {
+    "key": "literal #FFF7F7",
+    "value": "#FFF7F7FF"
+  },
+  "banner_error_border": {
+    "key": "literal #FAD4D8",
+    "value": "#FAD4D8FF"
+  },
+  "banner_warning_background": {
+    "key": "literal #FFFAEB",
+    "value": "#FFFAEBFF"
+  },
+  "banner_warning_border": {
+    "key": "literal #FED277",
+    "value": "#FED277FF"
+  },
+  "banner_info_background": {
+    "key": "literal #F5F8FE",
+    "value": "#F5F8FEFF"
+  },
+  "banner_info_border": {
+    "key": "literal #C2D6FC",
+    "value": "#C2D6FCFF"
+  },
+  "button_background": {
+    "key": "Button.startBackground",
+    "value": "#FFFFFFFF"
+  },
+  "button_foreground": {
+    "key": "Button.foreground (*.foreground)",
+    "value": "#000000FF"
+  },
+  "button_border": {
+    "key": "Button.startBorderColor",
+    "value": "#C9CCD6FF"
+  },
+  "button_default_background": {
+    "key": "Button.default.startBackground",
+    "value": "#3574F0FF"
+  },
+  "button_default_foreground": {
+    "key": "Button.default.foreground",
+    "value": "#FFFFFFFF"
+  },
+  "button_default_border": {
+    "key": "Button.default.startBorderColor",
+    "value": "#3574F0FF"
+  },
+  "text_field_background": {
+    "key": "TextField.background",
+    "value": "#FFFFFFFF"
+  },
+  "text_field_border": {
+    "key": "Component.borderColor",
+    "value": "#C9CCD6FF"
+  },
+  "list_hover_background": {
+    "key": "List.hoverBackground",
+    "value": "#EDF3FFFF"
+  },
+  "list_selection_background": {
+    "key": "List.selectionBackground (*.selectionBackground)",
+    "value": "#D4E2FFFF"
+  },
+  "list_selection_inactive_background": {
+    "key": "List.selectionInactiveBackground (*.selectionInactiveBackground)",
+    "value": "#DFE1E5FF"
+  },
+  "popup_background": {
+    "key": "Popup.background",
+    "value": "#FFFFFFFF"
+  },
+  "popup_border": {
+    "key": "Popup.borderColor",
+    "value": "#B9BDC9FF"
+  },
+  "menu_selection_background": {
+    "key": "MenuItem.selectionBackground (*.selectionBackground)",
+    "value": "#D4E2FFFF"
+  },
+  "tooltip_background": {
+    "key": "ToolTip.background",
+    "value": "#27282EFF"
+  },
+  "tooltip_foreground": {
+    "key": "ToolTip.foreground",
+    "value": "#FFFFFFFF"
+  },
+  "scrollbar_thumb": {
+    "key": "scheme:ScrollBar.Mac.thumbColor",
+    "value": "#00000033"
+  },
+  "scrollbar_thumb_hover": {
+    "key": "scheme:ScrollBar.Mac.hoverThumbColor",
+    "value": "#00000080"
+  },
+  "welcome_background": {
+    "key": "WelcomeScreen.background",
+    "value": "#F7F8FAFF"
+  },
+  "welcome_details_background": {
+    "key": "WelcomeScreen.Details.background",
+    "value": "#FFFFFFFF"
+  },
+  "welcome_project_selection_background": {
+    "key": "WelcomeScreen.Projects.selectionBackground (*.selectionBackground)",
+    "value": "#D4E2FFFF"
+  },
+  "console_background": {
+    "key": "scheme:CONSOLE_BACKGROUND_KEY",
+    "value": "#FFFFFFFF"
+  },
+  "console_normal": {
+    "key": "scheme:CONSOLE_NORMAL_OUTPUT.FOREGROUND",
+    "value": "#000000FF"
+  },
+  "console_error": {
+    "key": "scheme:CONSOLE_ERROR_OUTPUT.FOREGROUND",
+    "value": "#7F0000FF"
+  },
+  "console_system": {
+    "key": "scheme:CONSOLE_SYSTEM_OUTPUT.FOREGROUND",
+    "value": "#00007FFF"
+  }
+}

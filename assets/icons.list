@@ -1,0 +1,45 @@
+# Icons for `cargo xtask import-ui`: `<logical/name> <upstream path to the light svg>`.
+# New UI ("expui") icons; `<name>_dark.svg` next to a light icon is copied as its dark variant.
+# Old-UI equivalents are in platform/icons/src/PlatformIconMappings.json (expui -> classic).
+
+# Tool windows
+toolwindows/git platform/icons/src/expui/toolwindows/vcs.svg
+toolwindows/commit platform/icons/src/expui/toolwindows/commit.svg
+toolwindows/project platform/icons/src/expui/toolwindows/project.svg
+toolwindows/structure platform/icons/src/expui/toolwindows/structure.svg
+toolwindows/terminal plugins/terminal/resources/icons/expui/toolwindow/terminal.svg
+toolwindows/problems platform/icons/src/expui/toolwindows/problems.svg
+toolwindows/notifications platform/icons/src/expui/toolwindows/notifications.svg
+
+# General
+general/refresh platform/icons/src/expui/general/refresh.svg
+general/settings platform/icons/src/expui/general/settings.svg
+general/search platform/icons/src/expui/general/search.svg
+general/moreVertical platform/icons/src/expui/general/moreVertical.svg
+general/hide platform/icons/src/expui/general/hide.svg
+general/close platform/icons/src/expui/general/close.svg
+general/chevronDown platform/icons/src/expui/general/chevronDown.svg
+general/chevronRight platform/icons/src/expui/general/chevronRight.svg
+general/add platform/icons/src/expui/general/add.svg
+general/warning platform/icons/src/expui/status/warning.svg
+general/error platform/icons/src/expui/status/error.svg
+general/information platform/icons/src/expui/status/info.svg
+general/folder platform/icons/src/expui/nodes/folder.svg
+general/collapseAll platform/icons/src/expui/general/collapseAll.svg
+general/expandAll platform/icons/src/expui/general/expandAll.svg
+
+# VCS
+vcs/branch platform/icons/src/expui/general/vcs.svg
+# New UI variant of the current-branch label (DvcsIconMappings.json maps icons/new/ for the New UI)
+vcs/currentBranch platform/dvcs-impl/shared/resources/icons/new/currentBranchLabel.svg
+vcs/tag platform/icons/src/expui/nodes/tag.svg
+vcs/commit platform/icons/src/expui/vcs/commit.svg
+vcs/fetch platform/icons/src/expui/vcs/fetch.svg
+vcs/push platform/icons/src/expui/vcs/push.svg
+vcs/update platform/icons/src/expui/vcs/update.svg
+
+# Welcome screen
+welcome/open platform/icons/src/expui/welcome/open.svg
+welcome/clone platform/icons/src/expui/welcome/fromVCSTab.svg
+welcome/newProject platform/icons/src/expui/welcome/createNewProjectTab.svg
+nodes/ideaProject platform/icons/src/expui/nodes/ideaProject.svg

@@ -89,6 +89,7 @@ pub struct EdgePrintElementImpl {
     line_style: LineStyle,
     color_id: i32,
     is_selected: bool,
+    is_terminal: bool,
 }
 
 impl EdgePrintElementImpl {
@@ -112,6 +113,7 @@ impl EdgePrintElementImpl {
             line_style: Self::convert_to_line_style(graph_edge.edge_type),
             color_id: presentation_manager.get_color_id(&GraphElement::Edge(graph_edge)),
             is_selected: false,
+            is_terminal: false,
         };
         element.is_selected = presentation_manager.is_selected(
             &crate::api::printer::GraphPrintElement::Edge(element.clone()),
@@ -127,15 +129,25 @@ impl EdgePrintElementImpl {
         graph_edge: GraphEdge,
         presentation_manager: &dyn PrintElementPresentationManager,
     ) -> EdgePrintElementImpl {
-        EdgePrintElementImpl::new(
-            row_index,
-            position,
-            position,
-            edge_print_type,
-            graph_edge,
-            true,
-            presentation_manager,
-        )
+        EdgePrintElementImpl {
+            is_terminal: true,
+            ..EdgePrintElementImpl::new(
+                row_index,
+                position,
+                position,
+                edge_print_type,
+                graph_edge,
+                true,
+                presentation_manager,
+            )
+        }
+    }
+
+    /// Whether this is a `TerminalEdgePrintElement` (an arrow ending in this row). The painter
+    /// (`SimpleGraphCellPainter`) leaves a gap before a terminal arrow; equality ignores it, as
+    /// upstream's `EdgePrintElementImpl.equals` does.
+    pub fn is_terminal(&self) -> bool {
+        self.is_terminal
     }
 
     pub fn graph_edge(&self) -> GraphEdge {

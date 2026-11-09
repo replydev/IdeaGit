@@ -1,0 +1,24 @@
+# IntelliJ action ids for `cargo xtask import-ui`: `<action id> [<upstream XML declaring it>]`.
+# The declaring XML is read for `use-shortcut-of` bindings.
+# Output: assets/keymaps/{default,macos}.tsv ($default and "Mac OS X 10.5+").
+
+Vcs.Log.Refresh platform/vcs-log/impl/resources/intellij.platform.vcs.log.impl.xml
+OpenFile
+CloseProject
+Exit
+ActivateVersionControlToolWindow
+ActivateProjectToolWindow
+ActivateCommitToolWindow
+About
+$SelectAll
+$Copy
+EditorUp
+EditorDown
+EditorUpWithSelection
+EditorDownWithSelection
+EditorPageUp
+EditorPageDown
+EditorTextStart
+EditorTextEnd
+HideActiveWindow
+Refresh

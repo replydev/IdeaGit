@@ -86,3 +86,46 @@ fn missing_executable_is_start_failure() {
     assert!(result.start_failed);
     assert!(result.error_output[0].starts_with("Failed to start Git process"));
 }
+
+/// IdeaGit addition: silent commands are reported to `ConsoleSink::silent_command` (command line
+/// only), never as console events.
+#[test]
+fn silent_commands_reach_only_the_silent_hook() {
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct Sink {
+        events: Mutex<Vec<ConsoleEvent>>,
+        silent: Mutex<Vec<(PathBuf, String)>>,
+    }
+    impl ig_git::console::ConsoleSink for Sink {
+        fn event(&self, event: ConsoleEvent) {
+            self.events.lock().unwrap().push(event);
+        }
+        fn silent_command(&self, working_dir: &Path, command_line: &str) {
+            self.silent
+                .lock()
+                .unwrap()
+                .push((working_dir.to_path_buf(), command_line.to_string()));
+        }
+    }
+
+    let tmp = tempfile::tempdir().unwrap();
+    init_repo(tmp.path());
+    let sink = Arc::new(Sink::default());
+    let g = runner_with(sink.clone());
+    let before = sink.events.lock().unwrap().len();
+    let mut status = g.handler(tmp.path(), GitCommand::STATUS);
+    isolate(&mut status);
+    status.add_parameters(["--porcelain"]);
+    assert!(g.run_command(status).success());
+    assert_eq!(sink.events.lock().unwrap().len(), before);
+    let silent = sink.silent.lock().unwrap();
+    let (dir, line) = silent.last().expect("status reported as silent");
+    assert_eq!(dir, tmp.path());
+    assert!(
+        line.contains("status") && line.contains("--porcelain"),
+        "{line}"
+    );
+}

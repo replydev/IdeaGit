@@ -71,3 +71,37 @@ fn layout_is_independent_of_branch_input_order_when_heads_tie() {
         assert_eq!(actual, expected, "round {round}");
     }
 }
+
+/// IdeaGit addition (`EdgePrintElementImpl::is_terminal`, needed by the Log painter): the cut ends
+/// of a hidden long edge are terminal arrows; ordinary edges are not terminal.
+#[test]
+fn long_edge_cut_points_are_terminal_arrows() {
+    use ig_log::GraphPrintElement;
+    use ig_log::print_element::{EdgePrintElement, PrintElement};
+
+    // `side` (newest) -> c0, next to the 80-commit chain c79 -> ... -> c0
+    let mut commits = vec![GraphCommitImpl::create_commit(
+        "side".to_string(),
+        vec!["c0".to_string()],
+        1000,
+    )];
+    commits.extend(linear_chain(80));
+    let graph = build(&commits, &HashSet::new());
+    let visible = graph
+        .create_visible_graph(Options::DEFAULT, None, None)
+        .unwrap();
+    let edges: Vec<_> = (0..visible.visible_commit_count())
+        .flat_map(|row| visible.get_row_info(row).print_elements())
+        .filter_map(|e| match e {
+            GraphPrintElement::Edge(edge) => Some(edge),
+            GraphPrintElement::Node(_) => None,
+        })
+        .collect();
+    let terminal: Vec<_> = edges.iter().filter(|e| e.is_terminal()).collect();
+    assert!(!terminal.is_empty(), "the long edge is cut");
+    for edge in &terminal {
+        assert!(edge.has_arrow());
+        assert_eq!(edge.position_in_current_row(), edge.position_in_other_row());
+    }
+    assert!(edges.iter().any(|e| !e.is_terminal()));
+}

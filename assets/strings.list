@@ -1,0 +1,38 @@
+# Message bundle keys for `cargo xtask import-ui`: `<BundleName> <key>`.
+# Output: assets/strings/<BundleName>.properties with the listed keys in this order.
+
+# Log columns
+VcsLogBundle vcs.log.column.subject
+VcsLogBundle vcs.log.column.author
+VcsLogBundle vcs.log.column.date
+VcsLogBundle vcs.log.column.hash
+# Log status texts
+VcsLogBundle vcs.log.is.loading
+VcsLogBundle vcs.log.loading.status
+VcsLogBundle vcs.log.error.loading.commits.status
+VcsLogBundle vcs.log.no.commits.status
+VcsLogBundle vcs.log.is.not.available
+VcsLogBundle vcs.log.refresh.status.action
+# Refresh action
+VcsLogBundle action.Vcs.Log.Refresh.text
+VcsLogBundle action.Vcs.Log.Refresh.description
+# Tabs and labels
+VcsLogBundle vcs.log.tab.name
+VcsLogBundle vcs.log.references.detached.head
+
+# Dates (DateFormatUtil)
+UtilBundle date.format.minutes.ago
+UtilBundle date.format.today
+UtilBundle date.format.yesterday
+
+# Git
+GitBundle git4idea.vcs.name
+GitBundle executable.error.git.not.installed
+GitBundle executable.error.git.not.installed.hint
+GitBundle git.executable.validation.error.start.title
+GitBundle git.executable.validation.error.version.title
+GitBundle git.executable.validation.error.version.message
+
+# VCS tool windows
+VcsBundle vcs.console.toolwindow.display.name
+VcsBundle toolwindow.stripe.Commit

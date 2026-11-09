@@ -1,0 +1,5 @@
+<scheme name="Dark" version="142" parent_scheme="Darcula">
+  <attributes>
+    <option name="CONSOLE_SYSTEM_OUTPUT" baseAttributes="CONSOLE_NORMAL_OUTPUT" />
+  </attributes>
+</scheme>

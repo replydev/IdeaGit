@@ -106,10 +106,10 @@ pub fn read_remotes(git: &Git, root: &Path) -> Vec<GitRemote> {
 pub fn remotes_from_values(values: &ConfigValues) -> Vec<GitRemote> {
     let mut sections: Vec<(&str, &str)> = Vec::new();
     for key in values.keys() {
-        if let Some(sv) = parse_section_name_and_variable(key) {
-            if !sections.contains(&sv) {
-                sections.push(sv);
-            }
+        if let Some(sv) = parse_section_name_and_variable(key)
+            && !sections.contains(&sv)
+        {
+            sections.push(sv);
         }
     }
     sections

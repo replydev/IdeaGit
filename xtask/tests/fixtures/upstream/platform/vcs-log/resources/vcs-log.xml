@@ -1,0 +1,7 @@
+<idea-plugin>
+  <actions>
+    <group id="Vcs.Log.Toolbar">
+      <action class="RefreshLogAction" id="Vcs.Log.Refresh" use-shortcut-of="Refresh"/>
+    </group>
+  </actions>
+</idea-plugin>

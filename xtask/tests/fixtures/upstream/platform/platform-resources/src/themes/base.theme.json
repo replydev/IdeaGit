@@ -1,0 +1,16 @@
+{
+  "name": "Base",
+  "dark": true,
+  "colors": {
+    "grey": "#808080"
+  },
+  "ui": {
+    "*": {
+      "background": "#111111",
+      "foreground": "grey"
+    },
+    "Panel": { "background": "#222222" },
+    "Label": { "foreground": "#333333", "disabledForeground": { "os.mac": "#444444", "os.default": "#555555" } },
+    "Table.selectionBackground": "#666666"
+  }
+}

@@ -1,0 +1,16 @@
+<keymap name="$default" version="1" disable-mnemonics="false">
+  <action id="Refresh">
+    <keyboard-shortcut first-keystroke="control F5"/>
+  </action>
+  <action id="$Copy">
+    <keyboard-shortcut first-keystroke="control C"/>
+    <keyboard-shortcut first-keystroke="control INSERT"/>
+  </action>
+  <action id="HideActiveWindow">
+    <keyboard-shortcut first-keystroke="shift ESCAPE"/>
+  </action>
+  <action id="GotoClass">
+    <keyboard-shortcut first-keystroke="control N"/>
+    <keyboard-shortcut first-keystroke="control shift A" second-keystroke="C"/>
+  </action>
+</keymap>

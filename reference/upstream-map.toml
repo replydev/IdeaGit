@@ -31,6 +31,7 @@ deviations = [
 [modules."ig-git::console"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
 upstream = ["plugins/git4idea/backend/src/commands/GitImplBase.java#GitCommandOutputLogger"]
+deviations = ["ConsoleSink::silent_command reports silent (read) command lines for IdeaGit's console debug toggle; upstream never logs them"]
 
 [modules."ig-git::version"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
@@ -320,6 +321,7 @@ upstream = [
   "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/print/elements/TerminalEdgePrintElement.java",
 ]
 deviations = [
+  "EdgePrintElementImpl::is_terminal exposes TerminalEdgePrintElement-ness (upstream: instanceof) for the painter; equality ignores it",
   "color_id and is_selected are computed when the element is created, not on every access",
   "TerminalEdgePrintElement is the constructor EdgePrintElementImpl::terminal",
 ]
@@ -704,4 +706,275 @@ deviations = [
   "Recent first-block metadata goes to an optional consumer (upstream VcsLogCommitDataConsumer.storeRecentDetails)",
   "initialize() is idempotent (upstream: lazy job start); refresh() before initialize() initializes and returns that result",
   "refresh() dedupes roots (BTreeSet, path order), like upstream's rootsToRefresh.toSet()",
+]
+
+[modules."xtask::theme"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/platform-impl/src/com/intellij/ide/ui/UIThemeBean.kt",
+  "platform/platform-impl/src/com/intellij/ide/ui/UITheme.kt",
+  "platform/platform-impl/src/com/intellij/ide/ui/uiThemeParser.kt",
+  "platform/util/src/com/intellij/ui/ColorHexUtil.java",
+  "platform/util/ui/src/com/intellij/ui/JBColor.java",
+  "platform/editor-ui-ex/src/com/intellij/openapi/editor/colors/impl/AbstractColorsScheme.java",
+  "platform/editor-ui-ex/src/com/intellij/openapi/editor/colors/impl/ValueElementReader.java",
+]
+deviations = [
+  "Only os.default values are used (upstream prefers the running OS's os.* key)",
+  "LaF defaults set in Java code/properties are absent; a theme without parentTheme has no parent (upstream: default light/dark parent)",
+  "A missing color key falls back to the longest matching * pattern (upstream JBColor.findPatternMatch: first match in hash-map order)",
+  "Scheme attributes follow the baseAttributes attribute (upstream: the TextAttributesKey fallback declared in code); OS-specific scheme values are ignored",
+]
+
+[modules."xtask::tokens"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/util/ui/src/com/intellij/util/ui/JBUI.java",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/graph/DefaultColorGenerator.kt",
+  "platform/platform-api/src/com/intellij/ui/components/ScrollBarPainter.java",
+]
+deviations = ["Hardcoded upstream fallbacks are literals in assets/theme.keys, each citing its source"]
+
+[modules."xtask::keymap"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/platform-impl/src/com/intellij/openapi/keymap/impl/KeymapImpl.kt",
+  "platform/platform-impl/src/com/intellij/openapi/keymap/impl/MacOSDefaultKeymap.kt",
+  "platform/platform-impl/src/com/intellij/openapi/keymap/impl/DefaultKeymap.kt",
+]
+deviations = [
+  "Keystrokes keep the upstream text; Mac conversion swaps control/meta tokens instead of KeyStroke modifier masks",
+  "use-shortcut-of bindings come only from the XML named in assets/keymap.list (upstream: ActionManagerEx.getActionBinding)",
+  "Mouse and gesture shortcuts are ignored; INSERT keystrokes are dropped only for Mac keymaps (upstream: for all keymaps when running on macOS)",
+]
+
+[modules."xtask::icons"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/util/ui/src/com/intellij/ui/icons/ImageDescriptor.kt"]
+deviations = ["Icons are picked explicitly in assets/icons.list (upstream maps classic paths through *IconMappings.json)"]
+
+[modules."xtask::strings"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/util/src/com/intellij/AbstractBundle.kt"]
+deviations = ["Values are copied raw (escapes are not decoded)"]
+
+[modules."xtask::fonts"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/jewel/int-ui/int-ui-standalone/src/main/resources/fonts",
+  "platform/platform-tests/testData/fonts/Inconsolata_LICENSE.txt",
+]
+deviations = ["Upstream ships no license next to these fonts; *-OFL.txt = the font's name-table copyright + the OFL 1.1 text from Inconsolata_LICENSE.txt"]
+
+[modules."ig-ui-kit::palette"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/graph/DefaultColorGenerator.kt",
+]
+deviations = [
+  "No color cache; the default color (JBColor.BLACK) is resolved by the theme",
+  "java.awt.Color RGBtoHSB/HSBtoRGB ported inline; expected values were derived by hand, not run against a JVM",
+]
+
+[modules."ig-ui-kit::metrics"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/util/ui/src/com/intellij/util/ui/JBUI.java",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/paint/PaintParameters.java",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/ui/render/LabelPainter.java",
+  "platform/platform-impl/src/com/intellij/openapi/wm/impl/SquareStripeButtonLook.kt",
+  "platform/platform-impl/src/com/intellij/openapi/wm/impl/customFrameDecorations/header/CustomHeader.kt",
+]
+deviations = [
+  "Status bar height and widget padding are IdeaGit estimates (upstream derives them from font metrics)",
+]
+
+[modules."ig-ui-kit::theme"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/platform-resources/src/themes/expUI/expUI_light.theme.json",
+  "platform/platform-resources/src/themes/expUI/expUI_dark.theme.json",
+]
+deviations = [
+  "Tokens are generated by xtask::tokens; IjTheme also restyles gpui-component's theme",
+  "Theme follows the window appearance (OS), no theme chooser",
+]
+
+[modules."ig-ui-kit::stripe"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/platform-impl/src/com/intellij/toolWindow/ToolWindowToolbar.kt",
+  "platform/platform-impl/src/com/intellij/openapi/wm/impl/SquareStripeButton.kt",
+  "platform/platform-impl/src/com/intellij/openapi/wm/impl/SquareStripeButtonLook.kt",
+]
+deviations = [
+  "No drag and drop, more button or names under icons; icons are drawn as single-color masks",
+]
+
+[modules."ig-ui-kit::tool_window"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/platform-impl/src/com/intellij/toolWindow/ToolWindowHeader.kt",
+  "platform/platform-impl/src/com/intellij/openapi/wm/impl/content/ContentTabLabel.java",
+  "platform/platform-impl/src/com/intellij/openapi/wm/impl/content/TabContentLayout.java",
+]
+deviations = [
+  "A DockAreaRenderer for gpui-base's dock; one title per renderer; no gear menu, view modes or tab drag between docks",
+]
+
+[modules."ig-ui-kit::status_bar"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/platform-impl/src/com/intellij/openapi/wm/impl/status/IdeStatusBarImpl.kt",
+  "platform/platform-impl/src/com/intellij/openapi/wm/impl/status/TextPanel.kt",
+]
+deviations = [
+  "Text widgets only; progress shown as text",
+]
+
+[modules."ig-ui-kit::notification"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/platform-api/src/com/intellij/ui/InlineBanner.kt",
+  "platform/platform-api/src/com/intellij/ui/EditorNotificationPanel.java",
+  "platform/platform-impl/src/com/intellij/notification/impl/NotificationsManagerImpl.java",
+]
+deviations = [
+  "No balloon animation, timeout or event log",
+]
+
+[modules."ig-ui-kit::table"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/ui/table/VcsLogGraphTable.java",
+]
+
+[modules."ig-app::log::graph_painter"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/paint/SimpleGraphCellPainter.kt",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/paint/HeadNodePainter.kt",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/paint/PaintParameters.java",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/ui/render/GraphCommitCellUtil.kt",
+  "platform/util/ui/src/com/intellij/ui/paint/PaintUtil.java#alignToInt",
+]
+deviations = [
+  "Dash pattern has no phase (GPUI dash arrays)",
+  "OUTLINE nodes use the ordinary line thickness",
+]
+
+[modules."ig-app::log::labels"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/ui/render/LabelPainter.java",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/ui/render/LabelIcon.java",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/ui/render/TagPainter.kt",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/ui/render/GraphCommitCellRenderer.kt#getAvailableWidth",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/util/VcsLogUiUtil.java#shortenTextToFit",
+]
+deviations = [
+  "No bookmarks; char counts instead of UTF-16 units; warning icon drawn as a single-color mask",
+  "Right-aligned labels only (LABELS_LEFT_ALIGNED default false)",
+]
+
+[modules."ig-app::log::ref_groups"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "plugins/git4idea/backend/src/log/GitRefManager.kt#groupForTable",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/impl/SimpleRefGroup.kt",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/impl/SingletonRefGroup.java",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/impl/DetachedHeadRefGroup.kt",
+]
+deviations = [
+  "Tracked groups found by remote/<local> name only (no branch tracking info yet)",
+]
+
+[modules."ig-app::log::date"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/platform-api/src/com/intellij/util/text/DateFormatUtil.java#formatPrettyDateTime",
+]
+deviations = [
+  "Absolute format is the JDK en_US FormatStyle.SHORT; upstream follows the OS locale via DateTimeFormatManager",
+]
+
+[modules."ig-app::log::metadata"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/data/MiniDetailsGetter.kt",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/data/TopCommitsCache.java",
+]
+deviations = [
+  "One cache for top commits and loaded details",
+]
+
+[modules."ig-app::log::worker"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/data/VcsLogRefresherImpl.kt",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/data/MiniDetailsGetter.kt",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/ui/table/GraphTableModel.kt",
+]
+deviations = [
+  "Two threads (refresher; snapshot+metadata) instead of upstream's coroutine jobs",
+  "LIFO metadata queue keeps the newest 10 requests (SequentialLimitedLifoExecutor)",
+]
+
+[modules."ig-app::log::model"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/ui/table/GraphCommitCellController.java",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/ui/table/VcsLogGraphTable.java",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/ui/table/GraphTableModel.kt",
+]
+
+[modules."ig-app::log::selection"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/ui/table/VcsLogGraphTable.java",
+]
+deviations = [
+  "Selection is kept as a set of commits, not rows restored after refresh",
+]
+
+[modules."ig-app::log::view"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/ui/table/VcsLogGraphTable.java",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/ui/render/GraphCommitCellRenderer.kt",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/ui/table/column/VcsLogDefaultColumn.kt",
+]
+deviations = [
+  "Own table on GPUI uniform_list (spike: gpui-component's table is single-selection)",
+  "Fixed column widths, no Root column, no current-branch highlighting, no tooltips; loading rows show Loading…",
+]
+
+[modules."ig-app::console"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "plugins/git4idea/backend/src/commands/GitCommandOutputConsolePrinter.kt",
+  "plugins/git4idea/backend/src/util/GitVcsConsoleWriter.java",
+]
+deviations = [
+  "No ANSI decoding; bounded line buffer; read commands shown with a debug toggle (IdeaGit addition)",
+]
+
+[modules."ig-app::actions"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/platform-resources/src/keymaps/$default.xml",
+  "platform/platform-resources/src/keymaps/Mac OS X 10.5+.xml",
+]
+deviations = [
+  "Only implemented actions are bound; table navigation uses the Editor* keymap ids",
+]
+
+[modules."ig-app::settings"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/platform-impl/src/com/intellij/ide/RecentProjectsManagerBase.kt",
+  "plugins/git4idea/backend/src/config/GitVcsApplicationSettings.java",
+]
+deviations = [
+  "One settings.toml instead of recentProjects.xml / git.xml",
 ]
