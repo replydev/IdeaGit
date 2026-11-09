@@ -4,8 +4,9 @@
 //! Colors follow `platform/vcs-log/impl/src/com/intellij/vcs/log/ui/table/VcsLogGraphTable.java`
 //! in the New UI: the table background is the tool-window background (`getTableBackground`),
 //! selection uses `VersionControl.Log.Commit.selectionBackground` (the list selection colors,
-//! focused or not), hover uses `VersionControl.Log.Commit.hoveredBackground`. No grid lines
-//! (`setShowGrid(false)`, `setIntercellSpacing(emptySize)`).
+//! focused or not), hover uses `VersionControl.Log.Commit.hoveredBackground` mixed into the row
+//! background ([`hovered_background`]). No grid lines (`setShowGrid(false)`,
+//! `setIntercellSpacing(emptySize)`).
 
 use gpui::{App, Hsla, IntoElement, ParentElement, SharedString, Styled, div, px};
 
@@ -44,7 +45,10 @@ impl TableColors {
             selection_foreground: color(t.table_selection_foreground),
             selection_inactive: color(t.list_selection_inactive_background),
             selection_inactive_foreground: color(t.table_selection_inactive_foreground),
-            hover: color(t.log_hovered_background),
+            hover: color(hovered_background(
+                t.log_hovered_background,
+                t.tool_window_background,
+            )),
             header_separator: color(t.table_header_separator),
         }
     }
@@ -68,6 +72,33 @@ impl TableColors {
     }
 }
 
+/// `VcsLogGraphTable.getHoveredBackgroundColor`: the alpha of `VersionControl.Log.Commit.hoveredBackground`
+/// is not painted as transparency but used as the weight of the row background in
+/// `ColorUtil.mix(opaque hover, background, alpha / 255)` (`MixedColorProducer`: per channel
+/// `hover + round(balance * (background - hover))`). New UI dark's `#FFFFFFED` is therefore a 7% white
+/// tint, not near-opaque white. Colors are `0xRRGGBBAA`.
+pub fn hovered_background(hover: u32, background: u32) -> u32 {
+    let alpha = hover & 0xFF;
+    if alpha == 0xFF {
+        return hover;
+    }
+    if alpha == 0 {
+        return background;
+    }
+    let balance = f64::from(alpha) / 255.0;
+    // `new Color(HOVERED_BACKGROUND.getRGB())` is opaque
+    let first = hover | 0xFF;
+    let mut mixed = 0;
+    for shift in [24, 16, 8, 0] {
+        let a = f64::from((first >> shift) & 0xFF);
+        let b = f64::from((background >> shift) & 0xFF);
+        // `Math.round`: halves round up (Rust's `round` goes away from zero)
+        let value = (a + (balance * (b - a) + 0.5).floor()) as u32;
+        mixed |= value.min(0xFF) << shift;
+    }
+    mixed
+}
+
 /// A header cell (`VcsLogGraphTable`'s header: secondary text, no grid).
 pub fn header_cell(
     text: impl Into<SharedString>,
@@ -87,5 +118,28 @@ pub fn header_cell(
     match width {
         Some(w) => cell.w(px(w)).flex_none(),
         None => cell.flex_1(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::hovered_background;
+
+    #[test]
+    fn opaque_hover_is_used_as_is() {
+        // New UI light: `#E9EAEC`
+        assert_eq!(hovered_background(0xE9EAECFF, 0xFFFFFFFF), 0xE9EAECFF);
+    }
+
+    #[test]
+    fn translucent_hover_mixes_into_the_background() {
+        // New UI dark: `#FFFFFFED` over the tool window background `#2B2D30`: 7% white
+        // (255 + round(237/255 * (43 - 255)) = 58, and so on)
+        assert_eq!(hovered_background(0xFFFFFFED, 0x2B2D30FF), 0x3A3C3FFF);
+    }
+
+    #[test]
+    fn transparent_hover_is_the_background() {
+        assert_eq!(hovered_background(0xFFFFFF00, 0x2B2D30FF), 0x2B2D30FF);
     }
 }
