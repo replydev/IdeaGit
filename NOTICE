@@ -17,3 +17,11 @@ The NOTICE file of intellij-community reads:
 
 Test data under crates/ig-git/tests/fixtures/repo is copied unchanged from
 intellij-community/plugins/git4idea/testData/repo.
+
+Fonts under assets/fonts are copied unchanged from
+intellij-community/platform/jewel/int-ui/int-ui-standalone/src/main/resources/fonts
+(commit in reference/UPSTREAM) and are licensed under the SIL Open Font License, Version 1.1
+(see assets/fonts/*-OFL.txt):
+  - Inter (Inter-Regular/Medium/SemiBold/Bold.ttf): Copyright 2016 The Inter Project Authors
+  - JetBrains Mono (JetBrainsMono-Regular/Bold.ttf): Copyright 2020 The JetBrains Mono Project
+    Authors (https://github.com/JetBrains/JetBrainsMono)

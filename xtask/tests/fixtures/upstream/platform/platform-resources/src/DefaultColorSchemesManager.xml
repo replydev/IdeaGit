@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<list>
+  <scheme name="Default" default_scheme="true" version="1">
+    <colors>
+      <option name="CONSOLE_BACKGROUND_KEY" value="ffffff"/>
+    </colors>
+    <attributes>
+      <option name="CONSOLE_NORMAL_OUTPUT">
+        <value>
+          <option name="FOREGROUND" value="0"/>
+        </value>
+      </option>
+      <option name="CONSOLE_ERROR_OUTPUT">
+        <value>
+          <option name="FOREGROUND" value="7f0000" deuteranopia="d95716"/>
+        </value>
+      </option>
+      <option name="CONSOLE_SYSTEM_OUTPUT">
+        <value>
+          <option name="FOREGROUND" value="00007f"/>
+        </value>
+      </option>
+    </attributes>
+  </scheme>
+  <scheme name="Darcula" version="1" parent_scheme="Default">
+    <colors>
+      <option name="CONSOLE_BACKGROUND_KEY" value="2B2B2B" />
+    </colors>
+    <attributes>
+      <option name="CONSOLE_NORMAL_OUTPUT">
+        <value>
+          <option name="FOREGROUND" value="bbbbbb" />
+        </value>
+      </option>
+    </attributes>
+  </scheme>
+</list>

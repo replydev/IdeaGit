@@ -1,0 +1,9 @@
+{
+  "name": "Dark",
+  "dark": true,
+  "parentTheme": "Base",
+  "editorScheme": "Dark",
+  "ui": {
+    "Link": { "activeForeground": "#ABC" }
+  }
+}

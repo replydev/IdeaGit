@@ -1,0 +1,5 @@
+<scheme name="Light" version="142" parent_scheme="Default">
+  <colors>
+    <option name="CONSOLE_BACKGROUND_KEY" value="fafafa" />
+  </colors>
+</scheme>

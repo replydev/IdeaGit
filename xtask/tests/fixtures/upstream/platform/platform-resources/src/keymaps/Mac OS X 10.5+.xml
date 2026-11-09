@@ -1,0 +1,9 @@
+<keymap name="Mac OS X 10.5+" parent="$default" version="1" disable-mnemonics="true">
+  <action id="Refresh">
+    <keyboard-shortcut first-keystroke="meta R"/>
+  </action>
+  <action id="Exit">
+    <keyboard-shortcut first-keystroke="meta Q"/>
+  </action>
+  <action id="HideActiveWindow"/>
+</keymap>

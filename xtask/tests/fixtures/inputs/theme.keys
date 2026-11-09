@@ -1,0 +1,14 @@
+# Fixture theme keys.
+window_background = *.background
+panel_background = Panel.background
+foreground = Label.foreground
+disabled_foreground = Label.disabledForeground
+link = Link.activeForeground
+table_selection_background = Table.selectionBackground
+tree_background = Tree.background
+f32 graph_saturation = VersionControl.Log.Graph.saturation | 0.4  # DefaultColorGenerator.kt: namedFloat(..., 0.4f)
+banner_error_background = Banner.errorBackground | #FFF7F7/#402929  # JBUI.java: Banner.ERROR_BACKGROUND
+console_background = scheme:CONSOLE_BACKGROUND_KEY
+console_normal = scheme:CONSOLE_NORMAL_OUTPUT.FOREGROUND
+console_error = scheme:CONSOLE_ERROR_OUTPUT.FOREGROUND
+console_system = scheme:CONSOLE_SYSTEM_OUTPUT.FOREGROUND

@@ -1,0 +1,120 @@
+# Theme tokens for `cargo xtask import-ui` -> crates/ig-ui-kit/src/theme/tokens.rs.
+#
+# `[f32 ]<rust_field> = <alt> | <alt> ...`, tried left to right for the New UI "Light" and "Dark"
+# themes (platform/platform-resources/src/themes/expUI/). An alternative is a theme `ui` key
+# (missing keys fall back to `*` patterns, as JBColor.namedColor does), `scheme:<OPTION>` (editor
+# scheme <colors>), `scheme:<ATTR>.FOREGROUND` (editor scheme <attributes>), or a literal
+# (`#RRGGBB[AA]`, a float, or `<light>/<dark>`), which needs a trailing comment citing where
+# upstream hardcodes it. Generation fails if no alternative resolves for a theme.
+
+# Base
+window_background = *.background
+panel_background = Panel.background
+foreground = Label.foreground
+secondary_foreground = Label.infoForeground | Component.infoForeground
+disabled_foreground = Label.disabledForeground
+border = Borders.color
+focus_color = Component.focusColor
+link = Link.activeForeground
+
+# Tables (the commit log)
+table_background = Table.background
+table_foreground = Table.foreground
+table_selection_background = Table.selectionBackground
+table_selection_foreground = Table.selectionForeground
+table_selection_inactive_background = Table.selectionInactiveBackground
+table_selection_inactive_foreground = Table.selectionInactiveForeground
+table_header_separator = TableHeader.bottomSeparatorColor
+
+# VCS log
+log_current_branch_background = VersionControl.Log.Commit.currentBranchBackground
+log_hovered_background = VersionControl.Log.Commit.hoveredBackground
+log_unmatched_foreground = VersionControl.Log.Commit.unmatchedForeground
+log_reference_foreground = VersionControl.Log.Commit.Reference.foreground
+f32 graph_saturation = VersionControl.Log.Graph.saturation | 0.4  # DefaultColorGenerator.kt: namedFloat("VersionControl.Log.Graph.saturation", 0.4f)
+f32 graph_brightness = VersionControl.Log.Graph.brightness | 0.65  # DefaultColorGenerator.kt: namedFloat("VersionControl.Log.Graph.brightness", 0.65f)
+
+# Ref labels
+ref_head = VersionControl.GitLog.headIconColor
+ref_local_branch = VersionControl.GitLog.localBranchIconColor
+ref_remote_branch = VersionControl.GitLog.remoteBranchIconColor
+ref_tag = VersionControl.GitLog.tagIconColor
+ref_other = VersionControl.GitLog.otherIconColor
+
+# Tool windows
+tool_window_background = ToolWindow.background
+tool_window_header_background = ToolWindow.Header.background
+tool_window_header_inactive_background = ToolWindow.Header.inactiveBackground
+tool_window_header_tab_hover = ToolWindow.HeaderTab.hoverBackground
+# New UI content tabs are underlined, not filled: TabContentLayout paints them with
+# JBTabPainter.TOOL_WINDOW, whose selected background is UIManager.getColor(
+# "ToolWindow.HeaderTab.underlinedTabBackground"), which no New UI theme sets.
+tool_window_header_tab_selected = ToolWindow.HeaderTab.underlinedTabBackground | #00000000  # JBUI.CurrentTheme.ToolWindow.underlinedTabBackground() returns null -> no fill (JBDefaultTabPainter.paintSelectedTab)
+tool_window_tab_underline = ToolWindow.HeaderTab.underlineColor
+
+# Tool window stripes
+stripe_background = ToolWindow.Stripe.background
+stripe_separator = ToolWindow.Stripe.separatorColor
+stripe_button_hover_background = ToolWindow.Button.hoverBackground
+stripe_button_selected_background = ToolWindow.Button.selectedBackground
+stripe_button_selected_foreground = ToolWindow.Button.selectedForeground
+stripe_button_foreground = ToolWindow.Button.foreground
+
+# Main toolbar
+main_toolbar_background = MainToolbar.background
+main_toolbar_foreground = MainToolbar.foreground
+
+# Status bar
+status_bar_background = StatusBar.background
+status_bar_border = StatusBar.borderColor
+status_bar_widget_foreground = StatusBar.Widget.foreground
+status_bar_widget_hover_background = StatusBar.Widget.hoverBackground
+
+# Notifications (balloons)
+notification_background = Notification.background
+notification_foreground = Notification.foreground
+notification_border = Notification.borderColor
+notification_error_foreground = Label.errorForeground
+
+# Banners: no theme sets Banner.*, so JBUI's JBColor.namedColor(key, light, dark) defaults apply.
+banner_error_background = Banner.errorBackground | #FFF7F7/#402929  # JBUI.CurrentTheme.Banner.ERROR_BACKGROUND: hardcoded in JBUI.java
+banner_error_border = Banner.errorBorderColor | #FAD4D8/#5E3838  # JBUI.CurrentTheme.Banner.ERROR_BORDER_COLOR: hardcoded in JBUI.java
+banner_warning_background = Banner.warningBackground | #FFFAEB/#3D3223  # JBUI.CurrentTheme.Banner.WARNING_BACKGROUND: hardcoded in JBUI.java
+banner_warning_border = Banner.warningBorderColor | #FED277/#5E4D33  # JBUI.CurrentTheme.Banner.WARNING_BORDER_COLOR: hardcoded in JBUI.java
+banner_info_background = Banner.infoBackground | #F5F8FE/#25324D  # JBUI.CurrentTheme.Banner.INFO_BACKGROUND: hardcoded in JBUI.java
+banner_info_border = Banner.infoBorderColor | #C2D6FC/#35538F  # JBUI.CurrentTheme.Banner.INFO_BORDER_COLOR: hardcoded in JBUI.java
+
+# Buttons
+button_background = Button.startBackground
+button_foreground = Button.foreground
+button_border = Button.startBorderColor
+button_default_background = Button.default.startBackground
+button_default_foreground = Button.default.foreground
+button_default_border = Button.default.startBorderColor
+
+# Inputs, lists, popups
+text_field_background = TextField.background
+text_field_border = Component.borderColor
+list_hover_background = List.hoverBackground
+list_selection_background = List.selectionBackground
+list_selection_inactive_background = List.selectionInactiveBackground
+popup_background = Popup.background
+popup_border = Popup.borderColor
+menu_selection_background = MenuItem.selectionBackground
+tooltip_background = ToolTip.background
+tooltip_foreground = ToolTip.foreground
+# Scroll bar colors are editor scheme ColorKeys (ScrollBarPainter.java); the macOS keys are the
+# ones the New UI schemes tune.
+scrollbar_thumb = scheme:ScrollBar.Mac.thumbColor | scheme:ScrollBar.thumbColor
+scrollbar_thumb_hover = scheme:ScrollBar.Mac.hoverThumbColor | scheme:ScrollBar.hoverThumbColor
+
+# Welcome screen
+welcome_background = WelcomeScreen.background
+welcome_details_background = WelcomeScreen.Details.background
+welcome_project_selection_background = WelcomeScreen.Projects.selectionBackground
+
+# Console (editor scheme)
+console_background = scheme:CONSOLE_BACKGROUND_KEY
+console_normal = scheme:CONSOLE_NORMAL_OUTPUT.FOREGROUND
+console_error = scheme:CONSOLE_ERROR_OUTPUT.FOREGROUND
+console_system = scheme:CONSOLE_SYSTEM_OUTPUT.FOREGROUND

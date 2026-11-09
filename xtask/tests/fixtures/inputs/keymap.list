@@ -1,0 +1,6 @@
+Vcs.Log.Refresh platform/vcs-log/resources/vcs-log.xml
+Refresh
+$Copy
+Exit
+HideActiveWindow
+GotoClass
