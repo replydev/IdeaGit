@@ -372,7 +372,7 @@ impl LogWorker {
 
     /// Test hook: makes the current snapshot thread panic.
     #[cfg(test)]
-    fn panic_snapshot_thread(&self) {
+    pub(crate) fn panic_snapshot_thread(&self) {
         let _ = self.snapshot_tx.send(SnapshotCommand::Panic);
     }
 }

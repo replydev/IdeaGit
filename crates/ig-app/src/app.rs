@@ -47,10 +47,36 @@ impl GitStatus {
     }
 }
 
+/// Environment variables applied to every git command a project window runs, on top of the
+/// inherited process environment ([`Git::with_base_environment`]). Production uses none; tests set
+/// one so git ignores the developer's configuration and repository redirections.
+#[derive(Clone, Debug, Default)]
+pub struct GitEnvironment {
+    /// Variables to set.
+    pub set: Vec<(String, String)>,
+    /// Inherited variables to remove.
+    pub remove: Vec<String>,
+}
+
+impl GitEnvironment {
+    /// `git` with this environment as its base environment.
+    pub fn apply(&self, git: Git) -> Git {
+        let set: Vec<(&str, &str)> = self
+            .set
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        let remove: Vec<&str> = self.remove.iter().map(String::as_str).collect();
+        git.with_base_environment(&set, &remove)
+    }
+}
+
 pub struct AppState {
     pub settings: Settings,
     pub settings_path: PathBuf,
     pub git: GitStatus,
+    /// The base environment of the project windows' git (`None` in production).
+    pub git_environment: Option<GitEnvironment>,
 }
 
 impl Global for AppState {}
@@ -66,6 +92,7 @@ impl AppState {
             settings,
             settings_path,
             git,
+            git_environment: None,
         });
     }
 

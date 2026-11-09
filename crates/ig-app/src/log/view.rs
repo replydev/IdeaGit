@@ -103,7 +103,8 @@ impl LogView {
         }
     }
 
-    fn row_height(window: &Window) -> f32 {
+    /// The height of a Log row (`VcsLogGraphTable` row height for the UI font).
+    pub fn row_height(window: &Window) -> f32 {
         let ui = font(ig_ui_kit::fonts::UI_FAMILY);
         ig_ui_kit::metrics::log_row_height(font_height(
             &ui,
@@ -499,13 +500,22 @@ impl Render for LogView {
                 })
             }
         };
-        let (up, down, ext_up, ext_down, pg_up, pg_down, first, last, all) = (
+        let page = |down: bool| {
+            let model = self.model.clone();
+            move |_: &dyn gpui::Action, window: &mut Window, cx: &mut App| {
+                let row_height = Self::row_height(window);
+                model.update(cx, |m, cx| {
+                    m.move_page(down, row_height);
+                    cx.notify();
+                })
+            }
+        };
+        let (pg_up, pg_down) = (page(false), page(true));
+        let (up, down, ext_up, ext_down, first, last, all) = (
             on(|m| m.move_selection(-1, false)),
             on(|m| m.move_selection(1, false)),
             on(|m| m.move_selection(-1, true)),
             on(|m| m.move_selection(1, true)),
-            on(|m| m.move_page(false)),
-            on(|m| m.move_page(true)),
             on(|m| m.select_first()),
             on(|m| m.select_last()),
             on(|m| m.select_all()),

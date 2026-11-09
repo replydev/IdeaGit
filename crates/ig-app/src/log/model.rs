@@ -155,6 +155,14 @@ impl LogModel {
         }
     }
 
+    /// Test hook: makes the worker's snapshot thread panic.
+    #[cfg(test)]
+    pub(crate) fn panic_worker(&self) {
+        if let Some(worker) = &self.worker {
+            worker.panic_snapshot_thread();
+        }
+    }
+
     fn on_event(&mut self, epoch: u64, event: LogEvent, cx: &mut Context<LogModel>) {
         let Some(worker) = &self.worker else {
             return;
@@ -278,24 +286,21 @@ impl LogModel {
         }
     }
 
-    /// Rows that fit the table's viewport (Page Up / Page Down step), from the last layout; 1
-    /// before the table was laid out.
-    pub fn page_rows(&self) -> usize {
-        let state = self.scroll.0.borrow();
-        let viewport = f32::from(state.base_handle.bounds().size.height);
-        let row = state
-            .last_item_size
-            .map_or(0.0, |size| f32::from(size.item.height));
-        if row > 0.0 && viewport > row {
-            (viewport / row).floor() as usize
+    /// Rows of `row_height` that fit the table's viewport (the Page Up / Page Down step), from the
+    /// last layout; at least 1 (also before the table was laid out). Upstream `JTable` pages by the
+    /// visible rectangle.
+    pub fn page_rows(&self, row_height: f32) -> usize {
+        let viewport = f32::from(self.scroll.0.borrow().base_handle.bounds().size.height);
+        if row_height > 0.0 && viewport > row_height {
+            (viewport / row_height).floor() as usize
         } else {
             1
         }
     }
 
-    /// Page Up / Page Down: moves the lead by a viewport of rows.
-    pub fn move_page(&mut self, down: bool) {
-        let page = self.page_rows() as isize;
+    /// Page Up / Page Down: moves the lead by a viewport of rows of `row_height`.
+    pub fn move_page(&mut self, down: bool, row_height: f32) {
+        let page = self.page_rows(row_height) as isize;
         self.move_selection(if down { page } else { -page }, false);
     }
 

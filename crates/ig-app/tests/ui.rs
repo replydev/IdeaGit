@@ -1,6 +1,8 @@
 //! UI tests with GPUI's `TestAppContext` (headless, no GPU): the Log loads, selects and scrolls,
-//! an arrow click jumps, Refresh reaches the worker, the Git tool window toggles and gives focus
-//! back, Open Recent opens by path, and a folder opens in one window only.
+//! an arrow click jumps, Page Down pages by the visible rows, Refresh reaches the worker, the Git
+//! tool window toggles and gives focus back (to the active tab when shown), Open Recent opens by
+//! path, and a folder opens in one window only. Every git (the tests' and the app's) runs with an
+//! empty global config, no system config and no inherited repository redirection.
 //!
 //! The app is initialized with a scratch settings file (`init_with_settings`), never the user's.
 //!
@@ -12,11 +14,13 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    AnyWindowHandle, AppContext as _, Entity, Focusable as _, TestAppContext, WindowHandle,
+    AnyWindowHandle, AppContext as _, Entity, FocusHandle, Focusable as _, TestAppContext,
+    WindowHandle,
 };
 use gpui_component::Root;
-use ig_app::actions::ActivateVersionControlToolWindow;
-use ig_app::app::AppState;
+use gpui_component::dock::{DockLayout, DockPlacement};
+use ig_app::actions::{ActivateVersionControlToolWindow, HideActiveWindow};
+use ig_app::app::{AppState, GitEnvironment};
 use ig_app::log::model::{LogModel, LogState};
 use ig_app::menus::OpenRecent;
 use ig_app::project::ProjectWindow;
@@ -242,11 +246,22 @@ fn no_repositories_state(cx: &mut TestAppContext) {
     model.read_with(cx, |m, _| assert_eq!(m.state(), LogState::NoRoots));
 }
 
-/// `ig_app::init` with a settings file in `dir` (so tests never touch the user's settings).
+/// `ig_app::init` with a settings file in `dir` (so tests never touch the user's settings), and
+/// the project windows' git isolated like the test's own commands.
 fn init_app(cx: &mut TestAppContext, dir: &Path) {
     cx.executor().allow_parking();
     let settings = dir.join("settings.toml");
-    cx.update(|cx| ig_app::init_with_settings(settings, cx));
+    let config = empty_global_config().to_string_lossy().into_owned();
+    cx.update(|cx| {
+        ig_app::init_with_settings(settings, cx);
+        cx.global_mut::<AppState>().git_environment = Some(GitEnvironment {
+            set: vec![
+                ("GIT_CONFIG_GLOBAL".into(), config),
+                ("GIT_CONFIG_NOSYSTEM".into(), "1".into()),
+            ],
+            remove: SCRUBBED_ENV.iter().map(|v| v.to_string()).collect(),
+        });
+    });
 }
 
 /// A project window as `project::open` builds it (a `Root` around the project).
@@ -286,36 +301,135 @@ fn project_paths(cx: &mut TestAppContext) -> Vec<PathBuf> {
         .collect()
 }
 
+/// The keystrokes of `action`'s binding for the focused element (the real keymap's).
+fn binding(cx: &mut TestAppContext, window: AnyWindowHandle, action: &dyn gpui::Action) -> String {
+    window
+        .update(cx, |_, window, cx| {
+            let focused = window.focused(cx).expect("something has focus");
+            let binding = window
+                .highest_precedence_binding_for_action_in(action, &focused)
+                .unwrap_or_else(|| panic!("{} is bound", action.name()));
+            binding
+                .keystrokes()
+                .iter()
+                .map(|k| k.inner().unparse())
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .unwrap()
+}
+
 #[gpui::test]
 fn git_tool_window_toggles_and_returns_focus(cx: &mut TestAppContext) {
     let dir = repo(3);
     let config = tempfile::tempdir().unwrap();
     init_app(cx, config.path());
     let window = project_window(cx, dir.path());
+    let any: AnyWindowHandle = window.into();
     cx.run_until_parked();
-    let project = project_in(cx, window.into()).unwrap();
+    let project = project_in(cx, any).unwrap();
+    let focused = |cx: &mut TestAppContext,
+                   handle: &dyn Fn(&ProjectWindow, &gpui::App) -> FocusHandle| {
+        window
+            .update(cx, |_, window, cx| {
+                handle(project.read(cx), cx).is_focused(window)
+            })
+            .unwrap()
+    };
+    let log = |p: &ProjectWindow, cx: &gpui::App| p.log_view.read(cx).focus_handle(cx);
+    let editor = |p: &ProjectWindow, cx: &gpui::App| p.editor.read(cx).focus_handle(cx);
+    let console = |p: &ProjectWindow, cx: &gpui::App| p.console.read(cx).focus_handle(cx);
+    assert!(project.read_with(cx, |p, cx| p.is_git_tool_window_open(cx)));
+    assert!(focused(cx, &log));
+
+    // Escape-style hide with the real binding: focus goes to the editor area (keys no longer
+    // reach the hidden table)
+    let hide = binding(cx, any, &HideActiveWindow);
+    let show = binding(cx, any, &ActivateVersionControlToolWindow);
+    cx.simulate_keystrokes(any, &hide);
+    cx.run_until_parked();
+    assert!(!project.read_with(cx, |p, cx| p.is_git_tool_window_open(cx)));
+    assert!(focused(cx, &editor));
+    assert!(!focused(cx, &log));
+
+    // window actions still dispatch from there; showing focuses the active tab (the Log)
+    cx.simulate_keystrokes(any, &show);
+    cx.run_until_parked();
+    assert!(project.read_with(cx, |p, cx| p.is_git_tool_window_open(cx)));
+    assert!(focused(cx, &log));
+
+    // with the Console tab active, hiding and showing focuses the Console
     window
         .update(cx, |_, window, cx| {
-            project.update(cx, |p, cx| {
-                assert!(p.is_git_tool_window_open(cx));
-                p.set_git_tool_window(false, window, cx);
-                assert!(!p.is_git_tool_window_open(cx));
+            let dock = project.read(cx).dock.clone();
+            dock.update(cx, |dock, cx| {
+                let panels: Vec<_> = dock
+                    .layout(DockPlacement::Bottom)
+                    .unwrap()
+                    .panels()
+                    .filter_map(|id| dock.panel(id).cloned())
+                    .collect();
+                assert_eq!(panels.len(), 2);
+                let layout = panels
+                    .into_iter()
+                    .fold(DockLayout::tabs(), |l, p| l.panel_view(p, cx))
+                    .active_index(1);
+                dock.set_dock(DockPlacement::Bottom, layout, window, cx);
             });
         })
         .unwrap();
     cx.run_until_parked();
-    // focus left the hidden Log for the editor area (keys no longer reach the hidden table), and
-    // window actions still dispatch from there
+    cx.simulate_keystrokes(any, &hide);
+    cx.run_until_parked();
+    assert!(focused(cx, &editor));
+    cx.simulate_keystrokes(any, &show);
+    cx.run_until_parked();
+    assert!(focused(cx, &console));
+    // directly, not through the focus-lost fallback (the hidden Log tab isn't drawn)
     window
         .update(cx, |_, window, cx| {
-            let log = project.read(cx).log_view.read(cx).focus_handle(cx);
-            assert!(!log.contains_focused(window, cx));
-            assert!(window.focused(cx).is_some());
+            project.update(cx, |p, cx| {
+                p.set_git_tool_window(false, window, cx);
+                p.set_git_tool_window(true, window, cx);
+                assert!(console(p, cx).is_focused(window));
+            })
         })
         .unwrap();
-    cx.dispatch_action(window.into(), ActivateVersionControlToolWindow);
+}
+
+#[gpui::test]
+fn page_down_moves_by_the_visible_rows(cx: &mut TestAppContext) {
+    let dir = repo(80);
+    let config = tempfile::tempdir().unwrap();
+    init_app(cx, config.path());
+    let window = project_window(cx, dir.path());
+    let any: AnyWindowHandle = window.into();
+    let project = project_in(cx, any).unwrap();
+    let log = project.read_with(cx, |p, _| p.log.clone());
+    wait(cx, &log, |m| {
+        m.state() == LogState::Ready
+            && m.snapshot().is_some_and(|s| s.data.is_full())
+            && !m.is_busy()
+    });
+    // laid out with the rows
+    cx.update(|cx| cx.refresh_windows());
     cx.run_until_parked();
-    project.read_with(cx, |p, cx| assert!(p.is_git_tool_window_open(cx)));
+    let row_height = window
+        .update(cx, |_, window, _| {
+            ig_app::log::view::LogView::row_height(window)
+        })
+        .unwrap();
+    let page = log.read_with(cx, |m, _| m.page_rows(row_height));
+    assert!(page > 1, "{page} rows per page");
+    log.update(cx, |m, _| m.click_row(0, false, false));
+    let page_down = binding(cx, any, &ig_app::actions::table::PageDown);
+    cx.simulate_keystrokes(any, &page_down);
+    cx.run_until_parked();
+    let row = log.read_with(cx, |m, _| {
+        let commit = *m.selection.commits().iter().next().unwrap();
+        (0..m.row_count()).find(|&r| m.row(r).unwrap().0 == commit)
+    });
+    assert_eq!(row, Some(page));
 }
 
 #[gpui::test]
@@ -412,18 +526,20 @@ fn window_activation_refreshes_are_throttled(cx: &mut TestAppContext) {
     let window = project_window(cx, dir.path());
     let project = project_in(cx, window.into()).unwrap();
     let log = project.read_with(cx, |p, _| p.log.clone());
-    // while loading, activation doesn't queue a refresh
-    let now = Instant::now();
-    if log.read_with(cx, |m, _| m.state() == LogState::Loading) {
-        assert!(!project.update(cx, |p, cx| p.refresh_on_activation(now, cx)));
-    }
-    wait(cx, &log, |m| m.state() == LogState::Ready && !m.is_busy());
+    // also while loading or refreshing (the worker coalesces), but at most once per 500 ms
     let now = Instant::now();
     project.update(cx, |p, cx| {
         assert!(p.refresh_on_activation(now, cx));
         assert!(!p.refresh_on_activation(now + Duration::from_millis(100), cx));
         assert!(p.refresh_on_activation(now + Duration::from_millis(600), cx));
     });
+    wait(cx, &log, |m| m.state() == LogState::Ready && !m.is_busy());
+    // a commit made meanwhile shows after the next activation
+    git(dir.path(), &["commit", "-q", "--allow-empty", "-m", "new"]);
+    project.update(cx, |p, cx| {
+        assert!(p.refresh_on_activation(now + Duration::from_millis(1200), cx))
+    });
+    wait(cx, &log, |m| m.row_count() == 5 && !m.is_busy());
 }
 
 #[gpui::test]

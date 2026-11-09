@@ -144,6 +144,7 @@ mod tests {
                 settings,
                 settings_path: dir.path().join("settings.toml"),
                 git: GitStatus::Missing(String::new()),
+                git_environment: None,
             })
         });
         let paths = |actions: Vec<OpenRecent>| -> Vec<PathBuf> {

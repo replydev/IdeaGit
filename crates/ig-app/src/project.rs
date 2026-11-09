@@ -16,7 +16,9 @@ use gpui::{
     Focusable, InteractiveElement, IntoElement, ParentElement, Render, SharedString, Styled,
     Subscription, TitlebarOptions, Window, WindowBounds, WindowOptions, div, point, px, size,
 };
-use gpui_component::dock::{DockArea, DockLayout, DockPlacement, PanelEvent, panel_handle};
+use gpui_component::dock::{
+    DockArea, DockLayout, DockPlacement, PaneRef, PanelEvent, panel_handle,
+};
 use ig_git::console::{ConsoleEvent, ConsoleSink};
 use ig_git::runner::Git;
 use ig_git::version::GitVersion;
@@ -134,10 +136,8 @@ pub struct ProjectWindow {
     pub log: Entity<LogModel>,
     pub log_view: Entity<LogView>,
     pub console: Entity<ConsoleView>,
-    editor: Entity<EmptyEditor>,
-    /// The window's own focus target: actions and menus keep working when nothing inside has
-    /// focus.
-    focus: FocusHandle,
+    /// The editor area (where focus goes when the Git tool window hides).
+    pub editor: Entity<EmptyEditor>,
     last_activation_refresh: Option<Instant>,
     notices: Vec<Notice>,
     next_notice: usize,
@@ -157,14 +157,21 @@ impl ProjectWindow {
     ) -> ProjectWindow {
         let (console, sink) = crate::console::create(cx);
         let (refresh_tx, refresh_rx) = flume::unbounded();
-        let git = Arc::new(Git::new(
+        let mut git = Git::new(
             executable,
             version,
             Arc::new(ProjectConsole {
                 console: sink,
                 refresh: refresh_tx,
             }),
-        ));
+        );
+        if let Some(env) = cx
+            .try_global::<crate::app::AppState>()
+            .and_then(|state| state.git_environment.as_ref())
+        {
+            git = env.apply(git);
+        }
+        let git = Arc::new(git);
         let log = cx.new(|cx| LogModel::new(git, roots, cx));
         let log_view = cx.new(|cx| LogView::new(log.clone(), cx));
         // the "Show Read Commands in Console" toggle is app-wide
@@ -234,6 +241,17 @@ impl ProjectWindow {
                     bar.update(cx, |bar, cx| bar.reload(cx));
                 }
             }),
+            // nothing focused (the focused element left the frame): the window's actions dispatch
+            // from the focused element's path, so give focus a home again
+            cx.on_focus_lost(window, |this, window, cx| {
+                let focus = if this.is_git_tool_window_open(cx) {
+                    this.active_bottom_panel(cx)
+                } else {
+                    None
+                };
+                let focus = focus.unwrap_or_else(|| this.editor.focus_handle(cx));
+                window.focus(&focus, cx);
+            }),
             cx.observe_window_appearance(window, |_, window, cx| {
                 if IjTheme::sync_with_window(window, cx) {
                     cx.refresh_windows();
@@ -250,7 +268,6 @@ impl ProjectWindow {
             log_view,
             console,
             editor,
-            focus: cx.focus_handle(),
             last_activation_refresh: None,
             notices: Vec::new(),
             next_notice: 0,
@@ -287,7 +304,12 @@ impl ProjectWindow {
             });
         }
         if open {
-            window.focus(&self.log_view.focus_handle(cx), cx);
+            // the tab the user left active (Log or Console), as upstream activates the tool
+            // window's selected content
+            let focus = self
+                .active_bottom_panel(cx)
+                .unwrap_or_else(|| self.log_view.focus_handle(cx));
+            window.focus(&focus, cx);
         } else {
             // `HideActiveWindow` returns focus to the editor
             window.focus(&self.editor.focus_handle(cx), cx);
@@ -295,15 +317,34 @@ impl ProjectWindow {
         cx.notify();
     }
 
+    /// The focus handle of the bottom dock's active tab.
+    fn active_bottom_panel(&self, cx: &App) -> Option<FocusHandle> {
+        let dock = self.dock.read(cx);
+        let mut active = None;
+        dock.layout(DockPlacement::Bottom)?
+            .root()
+            .walk(&mut |node| {
+                if active.is_none()
+                    && let PaneRef::Tabs { panels, active_ix } = node.kind()
+                {
+                    active = panels.get(active_ix).copied();
+                }
+            });
+        Some(gpui_component::dock::BasePanelView::focus_handle(
+            dock.panel(active?)?.as_ref(),
+            cx,
+        ))
+    }
+
     /// Refreshes the log when the window is activated, at most once per
-    /// `ACTIVATION_REFRESH_INTERVAL` (500 ms) and not while it is loading or refreshing anyway. Returns
-    /// whether it refreshed.
+    /// `ACTIVATION_REFRESH_INTERVAL` (500 ms). Also while the log is loading or refreshing: the
+    /// worker coalesces queued refreshes, and a refresh restarts a worker that crashed (even
+    /// during its first load). Returns whether it refreshed.
     pub fn refresh_on_activation(&mut self, now: Instant, cx: &mut Context<Self>) -> bool {
         let recent = self
             .last_activation_refresh
             .is_some_and(|last| now.saturating_duration_since(last) < ACTIVATION_REFRESH_INTERVAL);
-        let log = self.log.read(cx);
-        if recent || log.is_busy() || log.state() == crate::log::model::LogState::Loading {
+        if recent {
             return false;
         }
         self.last_activation_refresh = Some(now);
@@ -429,7 +470,6 @@ impl Render for ProjectWindow {
         let _ = window;
         div()
             .id("project-window")
-            .track_focus(&self.focus)
             .size_full()
             .flex()
             .flex_col()
@@ -540,5 +580,101 @@ pub fn open(
         log::error!("opening a project window: {e}");
     } else {
         crate::welcome::close(cx);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+    use std::process::Command;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    use gpui::TestAppContext;
+    use ig_git::console::NullConsole;
+    use ig_git::runner::Git;
+
+    use super::ProjectWindow;
+    use crate::app::{AppState, GitEnvironment};
+    use crate::log::model::LogState;
+
+    fn git(dir: &Path, args: &[&str], config: &Path) {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .env("GIT_CONFIG_GLOBAL", config)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_AUTHOR_NAME", "T")
+            .env("GIT_AUTHOR_EMAIL", "t@example.com")
+            .env("GIT_COMMITTER_NAME", "T")
+            .env("GIT_COMMITTER_EMAIL", "t@example.com")
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_INDEX_FILE")
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?}");
+    }
+
+    #[gpui::test]
+    fn an_activation_restarts_a_worker_that_crashed_during_the_first_load(cx: &mut TestAppContext) {
+        cx.executor().allow_parking();
+        let scratch = tempfile::tempdir().unwrap();
+        let config = scratch.path().join("gitconfig");
+        std::fs::write(&config, "").unwrap();
+        let repo = scratch.path().join("repo");
+        std::fs::create_dir(&repo).unwrap();
+        git(&repo, &["init", "-q"], &config);
+        git(
+            &repo,
+            &["commit", "-q", "--allow-empty", "-m", "c"],
+            &config,
+        );
+        let repo = repo.canonicalize().unwrap();
+        let settings = scratch.path().join("settings.toml");
+        let config = config.to_string_lossy().into_owned();
+        cx.update(|cx| {
+            crate::init_with_settings(settings, cx);
+            cx.global_mut::<AppState>().git_environment = Some(GitEnvironment {
+                set: vec![
+                    ("GIT_CONFIG_GLOBAL".into(), config),
+                    ("GIT_CONFIG_NOSYSTEM".into(), "1".into()),
+                ],
+                remove: vec!["GIT_DIR".into(), "GIT_WORK_TREE".into()],
+            });
+        });
+        let version = Git::detect("git", Arc::new(NullConsole)).unwrap().version();
+        let window = cx.add_window(|window, cx| {
+            ProjectWindow::new(
+                repo.clone(),
+                vec![repo.clone()],
+                "git".into(),
+                version,
+                window,
+                cx,
+            )
+        });
+        let project = window.root(cx).unwrap();
+        let log = project.read_with(cx, |p, _| p.log.clone());
+        // the first load crashes before its first snapshot
+        log.read_with(cx, |m, _| m.panic_worker());
+        let wait = |cx: &mut TestAppContext, done: &dyn Fn(&ProjectWindow, &gpui::App) -> bool| {
+            let started = Instant::now();
+            loop {
+                cx.run_until_parked();
+                if project.read_with(cx, |p, cx| done(p, cx)) {
+                    return;
+                }
+                assert!(started.elapsed() < Duration::from_secs(30), "timed out");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        };
+        wait(cx, &|p, _| !p.notices.is_empty());
+        assert_eq!(log.read_with(cx, |m, _| m.state()), LogState::Loading);
+        assert!(project.update(cx, |p, cx| p.refresh_on_activation(Instant::now(), cx)));
+        wait(cx, &|p, cx| {
+            let m = p.log.read(cx);
+            m.state() == LogState::Ready && m.row_count() == 1 && !m.is_busy()
+        });
     }
 }

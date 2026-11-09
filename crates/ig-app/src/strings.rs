@@ -66,7 +66,18 @@ pub fn message(bundle: &str, key: &str, args: &[&str]) -> String {
 /// A button text without its mnemonic marker (`&`, written `\\&` in some bundles): GPUI buttons
 /// have no mnemonics.
 pub fn without_mnemonic(text: &str) -> String {
-    text.replace("\\&", "").replace('&', "")
+    let text = text.replace("\\&", "");
+    // `&&` is a literal `&` (`TextWithMnemonic.parse`)
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '&' {
+            out.push(c);
+        } else if chars.next_if_eq(&'&').is_some() {
+            out.push('&');
+        }
+    }
+    out
 }
 
 /// Parses `.properties` text: `key=value` / `key: value` lines, `#`/`!` comments.
@@ -241,6 +252,9 @@ mod tests {
         let text = super::text("IdeBundle", "button.remove.from.list");
         assert_eq!(without_mnemonic(&text), "Remove From List");
         assert_eq!(without_mnemonic("&Open"), "Open");
+        assert_eq!(without_mnemonic("Save && &Close"), "Save & Close");
+        assert_eq!(without_mnemonic("A&&&B"), "A&B");
+        assert_eq!(without_mnemonic("&&&&"), "&&");
     }
 
     #[test]
