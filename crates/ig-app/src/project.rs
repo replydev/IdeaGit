@@ -644,6 +644,9 @@ mod tests {
             });
         });
         let version = Git::detect("git", Arc::new(NullConsole)).unwrap().version();
+        // the first load crashes before its first snapshot (set before the worker starts: a panic
+        // command sent afterwards could arrive after the first snapshot)
+        crate::log::worker::panic_before_first_snapshot();
         let window = cx.add_window(|window, cx| {
             ProjectWindow::new(
                 repo.clone(),
@@ -656,8 +659,6 @@ mod tests {
         });
         let project = window.root(cx).unwrap();
         let log = project.read_with(cx, |p, _| p.log.clone());
-        // the first load crashes before its first snapshot
-        log.read_with(cx, |m, _| m.panic_worker());
         let wait = |cx: &mut TestAppContext, done: &dyn Fn(&ProjectWindow, &gpui::App) -> bool| {
             let started = Instant::now();
             loop {

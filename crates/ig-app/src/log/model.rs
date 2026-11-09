@@ -155,14 +155,6 @@ impl LogModel {
         }
     }
 
-    /// Test hook: makes the worker's snapshot thread panic.
-    #[cfg(test)]
-    pub(crate) fn panic_worker(&self) {
-        if let Some(worker) = &self.worker {
-            worker.panic_snapshot_thread();
-        }
-    }
-
     fn on_event(&mut self, epoch: u64, event: LogEvent, cx: &mut Context<LogModel>) {
         let Some(worker) = &self.worker else {
             return;

@@ -138,6 +138,24 @@ struct EpochState {
     cancelled: AtomicBool,
     /// Set (before [`LogEvent::WorkerFailed`] is sent) when a thread of the epoch panicked.
     failed: AtomicBool,
+    /// Test hook: the snapshot thread panics before building its first snapshot.
+    #[cfg(test)]
+    panic_on_pack: AtomicBool,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Test hook: the next worker started on this thread panics before its first snapshot (see
+    /// [`panic_before_first_snapshot`]).
+    static PANIC_BEFORE_FIRST_SNAPSHOT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Test hook: the next [`LogWorker::start`] on this thread gets a first epoch whose snapshot thread
+/// panics before its first snapshot, deterministically (a panic command sent after the start could
+/// arrive after the first snapshot).
+#[cfg(test)]
+pub(crate) fn panic_before_first_snapshot() {
+    PANIC_BEFORE_FIRST_SNAPSHOT.with(|c| c.set(true));
 }
 
 impl EpochState {
@@ -325,6 +343,10 @@ impl LogWorker {
         let previous = (!self.threads.is_empty()).then(|| self.threads.swap_remove(0));
         self.epoch += 1;
         self.state = Arc::new(EpochState::default());
+        #[cfg(test)]
+        if self.epoch == 1 && PANIC_BEFORE_FIRST_SNAPSHOT.with(|c| c.replace(false)) {
+            self.state.panic_on_pack.store(true, Ordering::Release);
+        }
         let (refresh_tx, refresh_rx) = channel();
         let (snapshot_tx, snapshot_rx) = channel();
         let shared = Shared {
@@ -602,6 +624,10 @@ impl SnapshotThread {
             }
             if self.state.is_cancelled() {
                 return;
+            }
+            #[cfg(test)]
+            if newest_pack.is_some() && self.state.panic_on_pack.load(Ordering::Acquire) {
+                panic!("test panic");
             }
             if let Some(pack) = newest_pack
                 && !self.snapshot(pack)
