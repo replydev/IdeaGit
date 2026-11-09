@@ -8,8 +8,13 @@
 pub mod fonts;
 pub mod icons;
 pub mod metrics;
+pub mod notification;
 pub mod palette;
+pub mod status_bar;
+pub mod stripe;
+pub mod table;
 pub mod theme;
+pub mod tool_window;
 
 pub use theme::{ActiveIjTheme, IjTheme, color};
 
