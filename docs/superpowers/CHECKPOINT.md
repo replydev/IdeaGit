@@ -1,4 +1,4 @@
-# IdeaGit — Checkpoint for the next agent (2026-11-09, after Plan 3)
+# IdeaGit — Checkpoint for the next agent (2026-11-10, after Plan 3 and the first manual-testing fixes)
 
 Read this first. It records where the project is, how the work has been done, and what comes next.
 
@@ -19,9 +19,14 @@ A cross-platform desktop Git client in **Rust + GPUI**. It reproduces IntelliJ I
   - `ig-git`: git CLI runner and console events; status, refs, config remotes, repository reader, root detection; `log` (parser, collector, `GitLogProvider`, `GitRefManager`).
   - `ig-log`: the IntelliJ commit graph (permanent graph, layout, print elements, facade) and `data` (storage, refs model, sorter, joiners, graph data, synchronous `VcsLogRefresher`).
   - `ig-ui-kit`: the IntelliJ New UI look on GPUI. Generated theme tokens, `expui` icons, Inter and JetBrains Mono, New UI metrics, graph palette, stripes, tool-window header (`IjDockRenderer` on gpui-component's dock), status bar, notifications.
-  - `ig-app`: the `ideagit` binary. It has welcome and project windows, menus and keymap, and the Git tool window. That tool window holds the read-only Log (graph and label painters, background log worker, metadata cache, selection) and the Console. `cargo run --locked -p ig-app -- [path]`.
+  - `ig-app`: the `ideagit` binary. It has welcome and project windows, menus and keymap, the read-only Log (graph and label painters, background log worker, metadata cache, selection) and the Git Console. `cargo run --locked -p ig-app -- [path]`.
+- **Project window layout** (the user's decision after manual testing, recorded as deviations in the spec and the upstream map):
+  - The Log fills the main area, like IntelliJ's "Log in an editor tab". There is no editor area yet.
+  - The Git Console is its own tool window: a left stripe button and a bottom dock, which starts hidden.
+  - Hiding a tool window removes its dock entirely, with no leftover header strip, and showing it restores its height.
+  - The Git stripe button and Cmd/Alt+9 focus the Log.
   - `xtask`: `cargo xtask import-ui --upstream ~/Code/intellij-community` (assets from the pinned commit) and `cargo xtask screenshots` (macOS only).
-- **Tests:** 507 pass, plus 1 ignored perf test. They cover ported upstream tests (byte-identical fixtures), IdeaGit tests, and headless GPUI UI tests (`crates/ig-app/tests/ui.rs`, `TestAppContext`).
+- **Tests:** 514 pass, plus 1 ignored perf test. They cover ported upstream tests (byte-identical fixtures), IdeaGit tests, and headless GPUI UI tests (`crates/ig-app/tests/ui.rs`, `TestAppContext`).
 - **Reference map:** `reference/UPSTREAM` pins `intellij-community` branch `263` at commit `b3c1c1958bc81cc96ea882fd4beba72849c1ed98`. `reference/upstream-map.toml` maps every Rust module to its upstream files, tests and deviations. `#member` anchors and directory entries are intentional.
 - **Plan generators:** `docs/superpowers/plangen/gen*.py`. `gen4.py` (Plan 3) holds the tasks as data. The same script renders the plan and applies a task to a scratch clone, which makes the simulation step exact.
 
@@ -54,7 +59,16 @@ Plan files are in `docs/superpowers/plans/`. Each one has "Not in this plan" / "
   - Dock resize: no `LayoutChanged` event, a closed dock doesn't reopen on drag.
   - Branch widget: no tag name or merge/rebase prefixes.
   - Root detection still runs on the UI thread.
-- **Never checked by eye.** Nobody has run the app interactively in this pipeline: not the welcome window, the native menus, nor the focus behaviour. Run `docs/app-shell-checklist.md` on macOS once.
+- **Manual testing has started.** The user runs the app on real repositories and reports bugs. Fixed so far:
+  - **Dark Log hover was near-white.** The hover color is mixed into the row background, as `VcsLogGraphTable.getHoveredBackgroundColor` does.
+  - **A hidden dock left a header strip.** Hiding now removes the dock entirely.
+  - **Linked worktrees were loaded as extra roots.** Worktrees under `.claude/worktrees` made the Log load the whole history once per worktree, so it was slow and every commit was duplicated. Root detection now skips dot-directories and `vendor`, as upstream's `vcs.root.detector.ignore.pattern` does.
+- **Still not checked by eye:**
+  - the welcome window
+  - the native menus
+  - the open Console dock
+
+  Finish `docs/app-shell-checklist.md` on macOS.
 
 ## How the work is done (keep doing this)
 
@@ -108,11 +122,17 @@ Lessons from Plan 3:
 
 - **Upstream reference clone:** `~/Code/intellij-community`, a sparse, blob-less clone of branch `263` at `b3c1c19`. Read any file with `git show HEAD:<path>`.
 - **Rust toolchains:** the default is 1.96. CI needs 1.95 (the MSRV). Extra toolchains (1.85, 1.93, 1.94, 1.97–1.99) can be removed with `rustup toolchain uninstall`.
-- **Disposable:** `/tmp/ig-proto*`, `/tmp/ig-tasks*`, and the `wip/app-shell-prototype` branch, which is fully merged in spirit. Delete it once you no longer want to compare against it.
+- **Disposable:** `/tmp/ig-proto*`, `/tmp/ig-tasks*`, `/tmp/lec-shots`, and the `wip/app-shell-prototype` and `feat/app-shell` branches (both merged). Delete them once you no longer want to compare against them.
+- **Quick visual check without a display:** `cargo xtask screenshots --repo <repo> --out <dir>` renders the window as it opens and prints when the Log was ready. It only works on macOS. Read the PNGs to check the layout.
 
 ## Next steps
 
-1. Run `docs/app-shell-checklist.md` by hand on macOS. Nobody has used the app interactively yet. Fix what it finds.
+1. Keep fixing what the user finds while testing by hand, and finish `docs/app-shell-checklist.md`. For each bug:
+   - use `superpowers:systematic-debugging` and compare against the upstream source
+   - write a failing test first
+   - record any difference from IntelliJ in `reference/upstream-map.toml`
+   - commit as separate logical commits
+   - push to `master` only when the user asks
 2. Brainstorm the next plan with the user. The likely candidates are:
    - the Log UI (details, changes, filters, actions, plus Plan 2b's BEK, filters and collapsing)
    - the diff/commit path
