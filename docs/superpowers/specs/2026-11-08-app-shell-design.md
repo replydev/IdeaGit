@@ -1,7 +1,7 @@
 # IdeaGit — App Shell and Read-Only Log (Design)
 
 Date: 2026-11-08
-Status: Approved design. Waiting for the user to review this document.
+Status: Approved. Decisions updated after the prototype spike (see Key decisions and Technical debt).
 Parent spec: `2026-11-08-ideagit-rust-design.md`. This document refines its "Shared infrastructure" and "Git Log" sections for the first runnable build.
 
 ## Goal
@@ -47,12 +47,12 @@ Out of scope, in later plans:
 
 | Decision | Choice |
 |---|---|
-| UI stack | `gpui` 0.2.2 + `gpui-component` 0.9.0 (crates.io), versions pinned exactly. |
+| UI stack | Zed's official `gpui` (and `gpui_platform`) from git, at Zed commit `f66ed399cdde86092af8af3dc7b418abf45f37f8`. The commit is pinned in `Cargo.lock`, so every build and CI command uses `--locked`. `gpui-component` comes from git at gpui-kit commit `c0946e6acdc9e2f984f317ef7f998ee2c79f1a87`, which is version 0.5.2. Newer gpui-component releases need `gpui-pre`, a third-party snapshot, so we don't use them. See the technical debt note. |
 | IntelliJ look | Assets imported from the pinned upstream commit with `cargo xtask import-ui`: theme JSON, `expui` SVG icons, bundle strings, keymap XML. Metrics are hand-ported from `JBUI` sources. |
-| Dock and table | `gpui-component`'s dock and table, restyled. A **spike** (the first task) checks they can match IntelliJ's look. If they can't, those two widgets become our own (fallback approach C) and the rest of the design is unchanged. |
+| Dock and table | Settled by the spike. The dock is `gpui-component`'s dock with our own `IjDockRenderer`. The IntelliJ header, content tabs, Hide button and stripes are ours. The Log table is our own widget on GPUI's virtualized list. gpui-component's table supports only single selection and imposes its own borders and padding, which is the fallback approach C. |
 | Graph cell | Our own GPUI element, drawn from `ig-log` print elements. It ports upstream `SimpleGraphCellPainter` and `LabelPainter`. |
 | Log data | One background log worker per project window. It owns `GitLogProvider`, `InMemoryStorage` and `VcsLogRefresher`. It sends immutable snapshots to the UI and loads metadata lazily per visible range. |
-| MSRV | If GPUI needs a newer Rust than 1.85, raise the workspace MSRV to match and record the reason. |
+| MSRV | 1.95. gpui uses `std::hint::cold_path`, which is stable since Rust 1.95. The CI MSRV job uses 1.95. |
 
 ## Architecture
 
@@ -180,3 +180,19 @@ Dependency direction: `ig-app` → `ig-ui-kit`, `ig-git`, `ig-log`. `ig-ui-kit` 
 - **File watching:**
   - triggers refresh automatically
   - full reload on `.git/shallow`, grafts or `refs/replace` changes
+
+## Technical debt
+
+- **gpui-component is pinned to an old commit.**
+  - **Pin:** gpui-kit `c0946e6` (version 0.5.2, 2026-09-03), about two months behind 0.9.
+  - **Cause:** upstream gpui-component moved to `gpui-pre` snapshots after that commit. Newer versions can't build on Zed's official gpui without a fork.
+  - **Where we depend on it:** only the dock, drawn through our own `IjDockRenderer`, plus a few small widgets. The Log table, stripes and graph are ours.
+  - **Way out:** if the pin blocks a gpui bump or a needed fix, vendor the dock into `ig-ui-kit` (roughly one module) and drop `gpui-component`.
+  - **Tracked in:** `docs/tech-debt.md`.
+- **Zed commit pinned through `Cargo.lock`.**
+  - **Why:** a `rev =` pin in `Cargo.toml` would create a second gpui source, because gpui-kit depends on Zed's default branch without a rev.
+  - **Consequence:** builds must use `--locked`. Bump with `cargo update -p gpui@0.2.2 --precise <zed sha>`. When choosing a sha, use the one a gpui-kit commit's own `Cargo.lock` records.
+- **Windows and Linux are unverified.**
+  - Zed's gpui needs `llvm-rc` on Windows, for its embedded manifest.
+  - The Linux system-package list in CI is inferred, not tested.
+  - The first CI run is the real check on both platforms.
