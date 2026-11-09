@@ -503,7 +503,13 @@ impl Render for ProjectWindow {
                 cx.set_global(ShowReadCommands(show));
                 crate::menus::install(cx);
             }))
-            .when_some(self.menu_bar.clone(), |d, bar| d.child(bar))
+            // `AppMenuBar` is `size_full` (made for a fixed-height `TitleBar`): in this column it
+            // would take the whole height as its flex basis and squeeze the Log to nothing. Upstream
+            // `IdeRootPane` lays the menu bar out at its preferred height; an auto-height,
+            // non-shrinking wrapper does the same.
+            .when_some(self.menu_bar.clone(), |d, bar| {
+                d.child(div().flex_none().child(bar))
+            })
             .child(self.render_toolbar(cx))
             .child(
                 div()
