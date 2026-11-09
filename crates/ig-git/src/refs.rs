@@ -133,10 +133,10 @@ fn collect_refs(root: &Path, dir: &Path, prefix: &str, result: &mut HashMap<Stri
             .collect::<Vec<_>>()
             .join("/");
         let branch_name = format!("{prefix}{rel}");
-        if check_ref_name(&branch_name) {
-            if let Ok(value) = try_load_file(&path) {
-                result.insert(branch_name, value);
-            }
+        if check_ref_name(&branch_name)
+            && let Ok(value) = try_load_file(&path)
+        {
+            result.insert(branch_name, value);
         }
     }
 }

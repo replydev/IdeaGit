@@ -75,7 +75,7 @@ fn fast_import_stream() -> (String, usize, usize) {
             None,
             &format!("main {main_count}"),
         ));
-        if main_count % 40 == 0 {
+        if main_count.is_multiple_of(40) {
             let feature = main_count / 40;
             let name = format!("refs/heads/feature/{feature}");
             let len = 3 + feature % 18;
@@ -83,7 +83,7 @@ fn fast_import_stream() -> (String, usize, usize) {
             for k in 0..len {
                 head = Some(st.commit(&name, head, None, &format!("feature {feature} commit {k}")));
             }
-            if feature % 3 != 0 {
+            if !feature.is_multiple_of(3) {
                 main_head = Some(st.commit(
                     "refs/heads/master",
                     main_head,
@@ -97,7 +97,7 @@ fn fast_import_stream() -> (String, usize, usize) {
                 branches += 1;
             }
         }
-        if main_count % 1000 == 0 {
+        if main_count.is_multiple_of(1000) {
             st.s.push_str(&format!(
                 "reset refs/tags/v{}\nfrom :{}\n\n",
                 main_count / 1000,

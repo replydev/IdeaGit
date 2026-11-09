@@ -153,10 +153,10 @@ impl<CommitId: Clone + Eq + Hash + Send + Sync> PermanentCommitsInfoImpl<CommitI
                     result.extend(rows.iter().copied());
                 }
             }
-            if !skip_not_loaded_commits {
-                if let Some(&node_id) = self.not_loaded_node_ids.get(commit_id) {
-                    result.insert(node_id);
-                }
+            if !skip_not_loaded_commits
+                && let Some(&node_id) = self.not_loaded_node_ids.get(commit_id)
+            {
+                result.insert(node_id);
             }
         }
         result

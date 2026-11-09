@@ -81,10 +81,11 @@ impl Flags for BitSetFlags {
         let fill = if value { u64::MAX } else { 0 };
         self.words.iter_mut().for_each(|word| *word = fill);
         let tail = self.size as usize % 64;
-        if value && tail != 0 {
-            if let Some(last) = self.words.last_mut() {
-                *last &= (1 << tail) - 1;
-            }
+        if value
+            && tail != 0
+            && let Some(last) = self.words.last_mut()
+        {
+            *last &= (1 << tail) - 1;
         }
     }
 }

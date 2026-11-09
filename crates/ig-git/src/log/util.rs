@@ -241,10 +241,10 @@ pub fn collect_metadata_with_params(
         })?;
         error.map_or(Ok(()), Err)
     })();
-    if let Err(e) = result {
-        if commits.is_empty() {
-            return Err(e);
-        }
+    if let Err(e) = result
+        && commits.is_empty()
+    {
+        return Err(e);
     }
     Ok(DetailedLogData {
         commits,
