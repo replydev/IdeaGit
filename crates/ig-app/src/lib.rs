@@ -12,6 +12,8 @@ pub mod logging;
 pub mod menus;
 pub mod paths;
 pub mod project;
+#[cfg(feature = "screenshots")]
+pub mod screenshots;
 pub mod settings;
 pub mod strings;
 pub mod welcome;
