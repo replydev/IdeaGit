@@ -48,26 +48,37 @@ pub trait Source {
     }
 }
 
+/// Environment variables that would redirect git away from the `-C <repo>` clone.
+const GIT_ENV_REMOVE: [&str; 6] = [
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+];
+
 /// A revision of a git repository.
 pub struct GitSource {
     repo: PathBuf,
-    rev: String,
+    /// Full hash of the commit the requested rev resolved to.
+    commit: String,
     files: OnceCell<Vec<String>>,
 }
 
 impl GitSource {
-    /// Checks that `rev` names a commit in `repo`.
+    /// Resolves `rev` to a commit in `repo`; see [`GitSource::commit`].
     pub fn new(repo: &Path, rev: &str) -> Result<Self> {
-        let source = GitSource {
+        let mut source = GitSource {
             repo: repo.to_path_buf(),
-            rev: rev.to_string(),
+            commit: String::new(),
             files: OnceCell::new(),
         };
-        source
+        let out = source
             .git(&[
                 "rev-parse",
                 "--verify",
-                "--quiet",
+                "--end-of-options",
                 &format!("{rev}^{{commit}}"),
             ])
             .map_err(|e| {
@@ -76,11 +87,25 @@ impl GitSource {
                     repo.display()
                 ))
             })?;
+        let hash = String::from_utf8_lossy(&out).trim().to_string();
+        if hash.len() < 40 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+            bail!("git rev-parse returned {hash:?} for {rev}, expected a commit hash");
+        }
+        source.commit = hash;
         Ok(source)
     }
 
+    /// The full hash of the resolved commit.
+    pub fn commit(&self) -> &str {
+        &self.commit
+    }
+
     fn git(&self, args: &[&str]) -> Result<Vec<u8>> {
-        let out = Command::new("git")
+        let mut cmd = Command::new("git");
+        for var in GIT_ENV_REMOVE {
+            cmd.env_remove(var);
+        }
+        let out = cmd
             .arg("-C")
             .arg(&self.repo)
             .args(args)
@@ -99,13 +124,26 @@ impl GitSource {
 
 impl Source for GitSource {
     fn read(&self, path: &str) -> Result<Vec<u8>> {
-        self.git(&["cat-file", "blob", &format!("{}:{path}", self.rev)])
-            .map_err(|_| Error(format!("{path} does not exist in {}", self.describe())))
+        // Telling "not in the tree" apart from git failures (e.g. a promisor blob fetch that
+        // fails on the network) needs the tree listing.
+        if !self.exists(path)? {
+            bail!("{path} does not exist in {}", self.describe());
+        }
+        // `<hash>:<path>` cannot be mistaken for an option.
+        self.git(&["cat-file", "blob", &format!("{}:{path}", self.commit)])
+            .map_err(|e| Error(format!("cannot read {path} in {}: {e}", self.describe())))
     }
 
     fn files(&self) -> Result<&[String]> {
         if self.files.get().is_none() {
-            let out = self.git(&["ls-tree", "-r", "-z", "--name-only", &self.rev])?;
+            let out = self.git(&[
+                "ls-tree",
+                "-r",
+                "-z",
+                "--name-only",
+                "--end-of-options",
+                &self.commit,
+            ])?;
             let mut files: Vec<String> = out
                 .split(|&b| b == 0)
                 .filter(|p| !p.is_empty())
@@ -118,7 +156,7 @@ impl Source for GitSource {
     }
 
     fn describe(&self) -> String {
-        format!("{} at {}", self.repo.display(), self.rev)
+        format!("{} at {}", self.repo.display(), self.commit)
     }
 }
 

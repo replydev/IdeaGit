@@ -214,6 +214,7 @@ fn missing_theme_key_names_the_field_keys_and_theme() {
     let mut text = std::fs::read_to_string(&keys).unwrap();
     text.push_str("ghost_color = Ghost.color | scheme:GHOST\n");
     std::fs::write(&keys, text).unwrap();
+    let before = snapshot(ws.path());
 
     let err = run(ws.path()).unwrap_err().to_string();
     assert!(err.contains("`ghost_color`"), "{err}");
@@ -223,7 +224,7 @@ fn missing_theme_key_names_the_field_keys_and_theme() {
     );
     assert!(err.contains("\"Light\""), "{err}");
     // Nothing is written when resolution fails.
-    assert!(!ws.path().join("crates").exists());
+    assert_eq!(snapshot(ws.path()), before);
 }
 
 #[test]
@@ -234,8 +235,10 @@ fn missing_icon_fails() {
         "general/nope platform/icons/src/expui/general/nope.svg\n",
     )
     .unwrap();
+    let before = snapshot(ws.path());
     let err = run(ws.path()).unwrap_err().to_string();
     assert!(err.contains("general/nope"), "{err}");
+    assert_eq!(snapshot(ws.path()), before);
 }
 
 #[test]
@@ -246,10 +249,14 @@ fn missing_string_fails() {
         "TestBundle no.such.key\n",
     )
     .unwrap();
+    let before = snapshot(ws.path());
     let err = run(ws.path()).unwrap_err().to_string();
     assert!(err.contains("TestBundle no.such.key"), "{err}");
+    assert_eq!(snapshot(ws.path()), before);
 
     std::fs::write(ws.path().join("assets/strings.list"), "NoBundle some.key\n").unwrap();
+    let before = snapshot(ws.path());
     let err = run(ws.path()).unwrap_err().to_string();
     assert!(err.contains("NoBundle.properties"), "{err}");
+    assert_eq!(snapshot(ws.path()), before);
 }

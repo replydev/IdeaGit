@@ -106,16 +106,25 @@ pub fn import_ui(source: &dyn Source, out: &Path, commit: &str) -> Result<Summar
     ])
 }
 
-/// Reads `commit = "..."` from `reference/UPSTREAM` under `root`.
+/// Reads `commit = "<40 hex digits>"` (an optional trailing `# comment` is ignored) from
+/// `reference/UPSTREAM` under `root`.
 pub fn pinned_commit(root: &Path) -> Result<String> {
     let path = root.join("reference/UPSTREAM");
     let text = std::fs::read_to_string(&path)
         .map_err(|e| Error(format!("cannot read {}: {e}", path.display())))?;
     for line in text.lines() {
-        if let Some(rest) = line.trim().strip_prefix("commit")
+        let line = line.split('#').next().unwrap_or_default().trim();
+        if let Some(rest) = line.strip_prefix("commit")
             && let Some(value) = rest.trim_start().strip_prefix('=')
         {
-            return Ok(value.trim().trim_matches('"').to_string());
+            let value = value.trim().trim_matches('"');
+            if value.len() != 40 || !value.bytes().all(|b| b.is_ascii_hexdigit()) {
+                bail!(
+                    "{}: commit {value:?} is not a full 40-digit hex commit hash",
+                    path.display()
+                );
+            }
+            return Ok(value.to_string());
         }
     }
     bail!("no `commit = \"...\"` line in {}", path.display())

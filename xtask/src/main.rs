@@ -63,10 +63,17 @@ fn import_ui(args: &[String]) -> Result<()> {
     let out = out
         .map(PathBuf::from)
         .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join(".."));
+    if fs.is_some() && rev.is_some() {
+        return Err(Error(
+            "import-ui: --rev only applies to a git clone, not --fs".into(),
+        ));
+    }
     let rev = match rev {
         Some(rev) => rev,
         None => xtask::pinned_commit(&out)?,
     };
+    // The commit recorded in generated headers: the full hash for git, the pinned value for --fs.
+    let mut commit = rev.clone();
     let source: Box<dyn Source> = match (
         fs,
         upstream.or_else(|| std::env::var("IDEAGIT_UPSTREAM").ok()),
@@ -77,7 +84,11 @@ fn import_ui(args: &[String]) -> Result<()> {
             ));
         }
         (Some(dir), _) => Box::new(FsSource::new(Path::new(&dir))?),
-        (None, Some(dir)) => Box::new(GitSource::new(Path::new(&dir), &rev)?),
+        (None, Some(dir)) => {
+            let git = GitSource::new(Path::new(&dir), &rev)?;
+            commit = git.commit().to_string();
+            Box::new(git)
+        }
         (None, None) => {
             return Err(Error(
                 "import-ui: no upstream clone given. Pass --upstream <intellij-community clone> or set \
@@ -87,7 +98,7 @@ fn import_ui(args: &[String]) -> Result<()> {
         }
     };
     eprintln!("import-ui: reading {}", source.describe());
-    let summary = xtask::import_ui(source.as_ref(), &out, &rev)?;
+    let summary = xtask::import_ui(source.as_ref(), &out, &commit)?;
     for rel in &summary.written {
         eprintln!("  wrote {rel}");
     }
