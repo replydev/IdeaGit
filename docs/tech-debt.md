@@ -31,4 +31,3 @@ Known compromises, why we accepted them, and how to pay them down. Keep each ent
 - **Log cancellation:** closing a window cancels the log worker between steps, but doesn't reach inside `VcsLogRefresher` or kill a running `git` process. A long first load of a huge repository keeps running in the background until it finishes. Pay down with runner cancellation (already open from Plan 2c).
 - **Status-bar branch widget:** shows one repository's branch or a short hash. It doesn't show the tag name for a detached HEAD on a tag, or the merge/rebase/cherry-pick/revert prefixes of `GitBranchWidget`.
 - **Synchronous work on the UI thread:** `detect_roots` and `Git::detect` (after saving a git path) run on the UI thread. Moving them off needs a way to keep "one window per folder" while opening is asynchronous.
-- **Windows and Linux are unverified** until CI runs the GPUI build there (see the CI notes in the app-shell plan).

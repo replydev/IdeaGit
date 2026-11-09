@@ -192,7 +192,7 @@ Dependency direction: `ig-app` → `ig-ui-kit`, `ig-git`, `ig-log`. `ig-ui-kit` 
 - **Zed commit pinned through `Cargo.lock`.**
   - **Why:** a `rev =` pin in `Cargo.toml` would create a second gpui source, because gpui-kit depends on Zed's default branch without a rev.
   - **Consequence:** builds must use `--locked`. Bump with `cargo update -p gpui@0.2.2 --precise <zed sha>`. When choosing a sha, use the one a gpui-kit commit's own `Cargo.lock` records.
-- **Windows and Linux are unverified.**
-  - Zed's gpui needs `llvm-rc` on Windows, for its embedded manifest.
-  - The Linux system-package list in CI is inferred, not tested.
-  - The first CI run is the real check on both platforms.
+- **Windows and Linux: verified by CI (2026-11-09).**
+  - Windows builds with the runner's `rc.exe` for gpui's embedded manifest; `llvm-rc` isn't needed there.
+  - The Linux package list in `ci.yml` works; it includes `libxcb-randr0-dev` and `libxcb-xfixes0-dev` for `zed-scap`.
+  - Headless screenshots work on macOS only at the pinned gpui revision.
