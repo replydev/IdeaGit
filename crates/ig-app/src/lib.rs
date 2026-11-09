@@ -1,5 +1,6 @@
-//! IdeaGit's application: windows, actions, the Git tool window (Log and Console) and the log
-//! worker. Built on `ig-git` / `ig-log` for Git and `ig-ui-kit` for the IntelliJ New UI look.
+//! IdeaGit's application: windows, actions, the Log (in the project window's main area), the
+//! Console tool window and the log worker. Built on `ig-git` / `ig-log` for Git and `ig-ui-kit` for
+//! the IntelliJ New UI look.
 //!
 //! Every module names the upstream sources it ports or imitates; see also
 //! `reference/upstream-map.toml`.

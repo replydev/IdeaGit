@@ -1,4 +1,4 @@
-//! The Git tool window's Console tab.
+//! The Git console (the Console tool window).
 //!
 //! Port of `plugins/git4idea/backend/src/commands/GitCommandOutputConsolePrinter.kt` and
 //! `plugins/git4idea/backend/src/util/GitVcsConsoleWriter.java`: a command start prints
@@ -270,7 +270,7 @@ impl ConsoleBuffer {
     }
 }
 
-/// The Console tab.
+/// The Console tool window's content.
 pub struct ConsoleView {
     buffer: ConsoleBuffer,
     show_silent: bool,

@@ -10,6 +10,11 @@ toolwindows/structure platform/icons/src/expui/toolwindows/structure.svg
 toolwindows/terminal plugins/terminal/resources/icons/expui/toolwindow/terminal.svg
 toolwindows/problems platform/icons/src/expui/toolwindows/problems.svg
 toolwindows/notifications platform/icons/src/expui/toolwindows/notifications.svg
+# The Git console. Upstream's expui console icon (`fileTypes/shell.svg`, the New UI mapping of
+# `nodes/console.svg` / `debugger/console.svg`) is a filled file-type icon, which the stripe's
+# single-color mask would draw as a solid block; the terminal tool window's icon is the same
+# prompt-in-a-frame glyph drawn as a tool-window (outline) icon.
+toolwindows/console plugins/terminal/resources/icons/expui/toolwindow/terminal.svg
 
 # General
 general/refresh platform/icons/src/expui/general/refresh.svg

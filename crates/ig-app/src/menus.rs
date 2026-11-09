@@ -2,8 +2,8 @@
 //!
 //! Items follow IntelliJ's main menu (`platform/platform-resources/src/idea/PlatformActions.xml`
 //! groups), reduced to what IdeaGit has: File (Open…, Open Recent, Close Project, Exit), View (Tool
-//! Windows → Git, plus the IdeaGit "Show read commands in Console" toggle), Git (Refresh Log),
-//! Help (About).
+//! Windows → Git and Console, plus the IdeaGit "Show read commands in Console" toggle), Git
+//! (Refresh Log), Help (About).
 
 use std::path::PathBuf;
 
@@ -11,8 +11,8 @@ use gpui::{App, Menu, MenuItem};
 use gpui_component::GlobalState;
 
 use crate::actions::{
-    About, ActivateVersionControlToolWindow, CloseProject, Exit, OpenFile, RefreshLog,
-    ToggleShowReadCommands,
+    About, ActivateConsoleToolWindow, ActivateVersionControlToolWindow, CloseProject, Exit,
+    OpenFile, RefreshLog, ToggleShowReadCommands,
 };
 use crate::app::AppState;
 use crate::strings;
@@ -71,10 +71,13 @@ pub fn build(cx: &App) -> Vec<Menu> {
     menus.push(Menu::new("File").items(file));
     menus.push(
         Menu::new("View").items([
-            MenuItem::submenu(Menu::new("Tool Windows").items([MenuItem::action(
-                git.clone(),
-                ActivateVersionControlToolWindow,
-            )])),
+            MenuItem::submenu(Menu::new("Tool Windows").items([
+                MenuItem::action(git.clone(), ActivateVersionControlToolWindow),
+                MenuItem::action(
+                    strings::text("VcsBundle", "vcs.console.toolwindow.display.name"),
+                    ActivateConsoleToolWindow,
+                ),
+            ])),
             MenuItem::separator(),
             MenuItem::action("Show Read Commands in Console", ToggleShowReadCommands)
                 .checked(show_read),

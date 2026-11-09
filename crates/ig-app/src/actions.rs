@@ -27,6 +27,10 @@ gpui::actions!(
         ActivateVersionControlToolWindow,
         /// `HideActiveWindow`
         HideActiveWindow,
+        /// IdeaGit addition: activates the Console tool window (upstream registers an
+        /// `Activate<id>ToolWindow` action per tool window; the Git console is a tab of the
+        /// Version Control tool window there, so it has none).
+        ActivateConsoleToolWindow,
         /// `Vcs.Log.Refresh`
         RefreshLog,
         /// IdeaGit addition: show silent (read) commands in the Git console.

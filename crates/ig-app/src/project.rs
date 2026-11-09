@@ -1,10 +1,13 @@
-//! A project window: main toolbar, tool-window stripes, the dock with the Git tool window (Log and
-//! Console tabs) at the bottom, the status bar, and error balloons.
+//! A project window: main toolbar, tool-window stripes, the Log in the main area, the Console tool
+//! window at the bottom, the status bar, and error balloons.
 //!
 //! Layout ported from IntelliJ's New UI frame (`IdeRootPane`, `ToolWindowPane`, `ToolWindowToolbar`,
-//! `MainToolbar`, `IdeStatusBarImpl`): the Git tool window lives at the bottom and its stripe button
-//! at the bottom of the left stripe. Refreshes the log on window activation (upstream refreshes on
-//! frame activation through the VFS) and after commands IdeaGit runs.
+//! `MainToolbar`, `IdeStatusBarImpl`). IdeaGit has no editor yet, so the Log fills the main area,
+//! as IntelliJ's Log opened in an editor tab; the Git console is its own tool window (upstream it
+//! is a tab of the Version Control tool window), docked at the bottom and hidden at start. The
+//! left stripe has the Git button (focuses the Log) and the Console button (shows/hides it).
+//! Refreshes the log on window activation (upstream refreshes on frame activation through the VFS)
+//! and after commands IdeaGit runs.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -13,12 +16,11 @@ use std::time::{Duration, Instant};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, AnyView, AnyWindowHandle, App, AppContext as _, Context, Entity, FocusHandle,
-    Focusable, InteractiveElement, IntoElement, ParentElement, Render, SharedString, Styled,
-    Subscription, TitlebarOptions, Window, WindowBounds, WindowOptions, div, point, px, size,
+    Focusable, InteractiveElement, IntoElement, ParentElement, Pixels, Render, SharedString,
+    Styled, Subscription, TitlebarOptions, Window, WindowBounds, WindowOptions, div, point, px,
+    size,
 };
-use gpui_component::dock::{
-    DockArea, DockLayout, DockPlacement, PaneRef, PanelEvent, panel_handle,
-};
+use gpui_component::dock::{DockArea, DockLayout, DockPlacement, PanelEvent, panel_handle};
 use ig_git::console::{ConsoleEvent, ConsoleSink};
 use ig_git::runner::Git;
 use ig_git::version::GitVersion;
@@ -30,8 +32,8 @@ use ig_ui_kit::tool_window::IjDockRenderer;
 use ig_ui_kit::{ActiveIjTheme, IjTheme, color};
 
 use crate::actions::{
-    ActivateVersionControlToolWindow, CloseProject, HideActiveWindow, RefreshLog,
-    ToggleShowReadCommands,
+    ActivateConsoleToolWindow, ActivateVersionControlToolWindow, CloseProject, HideActiveWindow,
+    RefreshLog, ToggleShowReadCommands,
 };
 use crate::console::{ChannelConsole, ConsoleView};
 use crate::log::model::{LogModel, LogModelEvent};
@@ -39,9 +41,12 @@ use crate::log::view::LogView;
 use crate::menus::ShowReadCommands;
 use crate::strings;
 
-/// The bottom dock's initial height. IdeaGit has no editor yet, so the Log gets most of the frame
+/// The Console tool window's initial height: about a third of the default frame's dock area
 /// (IntelliJ's default bottom tool window weight is 0.33).
-const BOTTOM_DOCK_HEIGHT: f32 = 560.0;
+const CONSOLE_HEIGHT: f32 = 280.0;
+
+/// The Log's panel name: drawn without a tool-window header in the main area.
+const LOG_PANEL: &str = crate::log::view::PANEL_NAME;
 
 /// `VcsLogUtil.SHORT_HASH_LENGTH`.
 const SHORT_HASH_LENGTH: usize = 8;
@@ -78,31 +83,6 @@ struct Notice {
     content: String,
 }
 
-/// An editor-area placeholder (IdeaGit has no editor yet).
-pub struct EmptyEditor(FocusHandle);
-
-impl gpui::EventEmitter<PanelEvent> for EmptyEditor {}
-impl Focusable for EmptyEditor {
-    fn focus_handle(&self, _: &App) -> FocusHandle {
-        self.0.clone()
-    }
-}
-impl gpui_component::dock::BasePanel for EmptyEditor {
-    fn panel_name(&self) -> &'static str {
-        "EmptyEditor"
-    }
-}
-impl gpui_component::dock::Panel for EmptyEditor {}
-impl Render for EmptyEditor {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // focusable, so hiding a tool window has somewhere to return focus to
-        div()
-            .track_focus(&self.0)
-            .size_full()
-            .bg(color(cx.ij().tokens.panel_background))
-    }
-}
-
 /// The console as a dock panel.
 pub struct ConsolePanel {
     pub view: Entity<ConsoleView>,
@@ -120,8 +100,10 @@ impl gpui_component::dock::BasePanel for ConsolePanel {
     }
 }
 impl gpui_component::dock::Panel for ConsolePanel {
+    /// The tool window's only content, unnamed: the header shows just the tool-window title (as
+    /// upstream for a single content without a display name).
     fn tab_name(&self, _: &App) -> Option<SharedString> {
-        Some(strings::text("VcsBundle", "vcs.console.toolwindow.display.name").into())
+        Some(SharedString::default())
     }
 }
 impl Render for ConsolePanel {
@@ -136,8 +118,11 @@ pub struct ProjectWindow {
     pub log: Entity<LogModel>,
     pub log_view: Entity<LogView>,
     pub console: Entity<ConsoleView>,
-    /// The editor area (where focus goes when the Git tool window hides).
-    pub editor: Entity<EmptyEditor>,
+    console_panel: Entity<ConsolePanel>,
+    /// The Console tool window's height, kept while it's hidden. Hiding removes the bottom dock (a
+    /// merely closed dock keeps a header strip, unlike IntelliJ's hidden tool windows); showing
+    /// sets it again at this height.
+    console_height: Pixels,
     last_activation_refresh: Option<Instant>,
     notices: Vec<Notice>,
     next_notice: usize,
@@ -180,28 +165,23 @@ impl ProjectWindow {
         let console_panel = cx.new(|_| ConsolePanel {
             view: console.clone(),
         });
-        let editor = cx.new(|cx| EmptyEditor(cx.focus_handle()));
 
         let this = cx.entity().downgrade();
+        // the Console is the only tool window with a header; the Log in the main area has none
         let renderer = IjDockRenderer::with_headerless(
-            strings::text("GitBundle", "git4idea.vcs.name"),
+            strings::text("VcsBundle", "vcs.console.toolwindow.display.name"),
             move |window, cx| {
-                let _ = this.update(cx, |this, cx| this.set_git_tool_window(false, window, cx));
+                let _ = this.update(cx, |this, cx| this.set_console(false, window, cx));
             },
-            vec!["EmptyEditor"],
+            vec![LOG_PANEL],
         );
         let dock = cx.new(|cx| DockArea::new("project", None, window, cx).with_renderer(renderer));
         dock.update(cx, |dock, cx| {
-            dock.set_center(DockLayout::tabs().panel(editor.clone()), window, cx);
-            dock.set_dock(
-                DockPlacement::Bottom,
-                DockLayout::tabs()
-                    .panel_view(panel_handle(log_view.clone()), cx)
-                    .panel_view(panel_handle(console_panel), cx),
+            dock.set_center(
+                DockLayout::tabs().panel_view(panel_handle(log_view.clone()), cx),
                 window,
                 cx,
             );
-            dock.set_dock_size(DockPlacement::Bottom, px(BOTTOM_DOCK_HEIGHT), window, cx);
         });
 
         let log_for_refresh = log.downgrade();
@@ -242,15 +222,9 @@ impl ProjectWindow {
                 }
             }),
             // nothing focused (the focused element left the frame): the window's actions dispatch
-            // from the focused element's path, so give focus a home again
+            // from the focused element's path, so give focus a home again (the Log, always shown)
             cx.on_focus_lost(window, |this, window, cx| {
-                let focus = if this.is_git_tool_window_open(cx) {
-                    this.active_bottom_panel(cx)
-                } else {
-                    None
-                };
-                let focus = focus.unwrap_or_else(|| this.editor.focus_handle(cx));
-                window.focus(&focus, cx);
+                window.focus(&this.log_view.focus_handle(cx), cx);
             }),
             cx.observe_window_appearance(window, |_, window, cx| {
                 if IjTheme::sync_with_window(window, cx) {
@@ -267,7 +241,8 @@ impl ProjectWindow {
             log,
             log_view,
             console,
-            editor,
+            console_panel,
+            console_height: px(CONSOLE_HEIGHT),
             last_activation_refresh: None,
             notices: Vec::new(),
             next_notice: 0,
@@ -296,47 +271,63 @@ impl ProjectWindow {
         cx.notify();
     }
 
-    pub fn is_git_tool_window_open(&self, cx: &App) -> bool {
+    /// Whether the Console tool window is shown (docked at the bottom).
+    pub fn is_console_open(&self, cx: &App) -> bool {
         self.dock.read(cx).is_dock_open(DockPlacement::Bottom)
     }
 
-    pub fn set_git_tool_window(&mut self, open: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_git_tool_window_open(cx) != open {
+    /// Shows the Console tool window and focuses it, or hides it (removing the bottom dock) and
+    /// returns focus to the Log.
+    pub fn set_console(&mut self, open: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.is_console_open(cx) != open {
+            let panel = self.console_panel.clone();
+            let height = &mut self.console_height;
             self.dock.update(cx, |dock, cx| {
-                dock.toggle_dock(DockPlacement::Bottom, window, cx)
+                if open {
+                    dock.set_dock(
+                        DockPlacement::Bottom,
+                        DockLayout::tabs().panel(panel),
+                        window,
+                        cx,
+                    );
+                    dock.set_dock_size(DockPlacement::Bottom, *height, window, cx);
+                } else {
+                    if let Some(size) = dock.dock_size(DockPlacement::Bottom) {
+                        *height = size;
+                    }
+                    dock.remove_dock(DockPlacement::Bottom, window, cx);
+                }
             });
         }
-        if open {
-            // the tab the user left active (Log or Console), as upstream activates the tool
-            // window's selected content
-            let focus = self
-                .active_bottom_panel(cx)
-                .unwrap_or_else(|| self.log_view.focus_handle(cx));
-            window.focus(&focus, cx);
+        let focus = if open {
+            self.console.focus_handle(cx)
         } else {
-            // `HideActiveWindow` returns focus to the editor
-            window.focus(&self.editor.focus_handle(cx), cx);
-        }
+            self.log_view.focus_handle(cx)
+        };
+        window.focus(&focus, cx);
         cx.notify();
     }
 
-    /// The focus handle of the bottom dock's active tab.
-    fn active_bottom_panel(&self, cx: &App) -> Option<FocusHandle> {
-        let dock = self.dock.read(cx);
-        let mut active = None;
-        dock.layout(DockPlacement::Bottom)?
-            .root()
-            .walk(&mut |node| {
-                if active.is_none()
-                    && let PaneRef::Tabs { panels, active_ix } = node.kind()
-                {
-                    active = panels.get(active_ix).copied();
-                }
-            });
-        Some(gpui_component::dock::BasePanelView::focus_handle(
-            dock.panel(active?)?.as_ref(),
-            cx,
-        ))
+    /// `HideActiveWindow`: hides the Console when it's the active (focused) tool window. The Log
+    /// is the main content, not a tool window, so there's nothing to hide otherwise.
+    fn hide_active_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.is_console_open(cx) && self.console.focus_handle(cx).contains_focused(window, cx) {
+            self.set_console(false, window, cx);
+        }
+    }
+
+    /// The Console stripe button and `ActivateConsoleToolWindow` (`ActivateToolWindowAction`):
+    /// hides the Console when it's open and active, otherwise shows and focuses it.
+    fn activate_console(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let active =
+            self.is_console_open(cx) && self.console.focus_handle(cx).contains_focused(window, cx);
+        self.set_console(!active, window, cx);
+    }
+
+    /// The Git stripe button and `ActivateVersionControlToolWindow`: focuses the Log.
+    pub fn focus_log(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        window.focus(&self.log_view.focus_handle(cx), cx);
+        cx.notify();
     }
 
     /// Refreshes the log when the window is activated, at most once per
@@ -417,16 +408,26 @@ impl ProjectWindow {
 impl Render for ProjectWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = cx.ij().tokens;
-        let git_open = self.is_git_tool_window_open(cx);
-        let git_name = strings::text("GitBundle", "git4idea.vcs.name");
+        let console_open = self.is_console_open(cx);
         let this = cx.entity().downgrade();
+        // the Log is always the main content, so the Git button is always selected
         let git_button = StripeButton::new("stripe-git", "toolwindows/git")
-            .selected(git_open)
-            .tooltip(git_name)
+            .selected(true)
+            .tooltip(strings::text("GitBundle", "git4idea.vcs.name"))
+            .on_click(move |_, window, cx| {
+                let _ = this.update(cx, |this, cx| this.focus_log(window, cx));
+            });
+        let this = cx.entity().downgrade();
+        let console_button = StripeButton::new("stripe-console", "toolwindows/console")
+            .selected(console_open)
+            .tooltip(strings::text(
+                "VcsBundle",
+                "vcs.console.toolwindow.display.name",
+            ))
             .on_click(move |_, window, cx| {
                 let _ = this.update(cx, |this, cx| {
-                    let open = !this.is_git_tool_window_open(cx);
-                    this.set_git_tool_window(open, window, cx);
+                    let open = !this.is_console_open(cx);
+                    this.set_console(open, window, cx);
                 });
             });
         let busy = self.log.read(cx).is_busy();
@@ -484,11 +485,16 @@ impl Render for ProjectWindow {
             }))
             .on_action(
                 cx.listener(|this, _: &ActivateVersionControlToolWindow, window, cx| {
-                    this.set_git_tool_window(true, window, cx)
+                    this.focus_log(window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &ActivateConsoleToolWindow, window, cx| {
+                    this.activate_console(window, cx)
                 }),
             )
             .on_action(cx.listener(|this, _: &HideActiveWindow, window, cx| {
-                this.set_git_tool_window(false, window, cx)
+                this.hide_active_window(window, cx)
             }))
             .on_action(cx.listener(|_, _: &CloseProject, window, _| window.remove_window()))
             .on_action(cx.listener(|_, _: &ToggleShowReadCommands, _, cx| {
@@ -504,7 +510,11 @@ impl Render for ProjectWindow {
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .child(stripe(StripeSide::Left, vec![git_button], cx))
+                    .child(stripe(
+                        StripeSide::Left,
+                        vec![git_button, console_button],
+                        cx,
+                    ))
                     .child(div().flex_1().min_w_0().h_full().child(self.dock.clone()))
                     .child(stripe(StripeSide::Right, Vec::new(), cx)),
             )

@@ -7,12 +7,17 @@ Start the app with `cargo run --locked --release -p ig-app -- [path]`.
 
 ## Open a real repository
 
-- [ ] `ideagit <repo>` opens a project window with the Git tool window on the **Log** tab.
+- [ ] `ideagit <repo>` opens a project window with the **Log** filling the main area (focused) and the Console hidden.
 - [ ] The graph, ref labels, author, date and hash columns match IntelliJ IDEA's Log for the same repository
       (compare with `docs/ui-reference/`).
 - [ ] Click, Shift+click, Cmd/Ctrl+click and the arrow keys select rows as in IntelliJ.
 - [ ] Hovering a long-edge arrow highlights it; clicking it jumps to and selects the target row.
-- [ ] The **Console** tab shows the commands IdeaGit ran; **View → Show read commands in Console** also shows reads.
+- [ ] The **Console** stripe button (below Git) shows the Console tool window at the bottom with the commands IdeaGit
+      ran; **View → Show read commands in Console** also shows reads.
+- [ ] Shift+Esc in the Console, its header's Hide button, or the stripe button hides it completely (no strip left) and
+      focus returns to the Log; showing it again keeps the height it was resized to.
+- [ ] Cmd+9 (macOS) / Alt+9 focuses the Log; the Git stripe button is always selected, the Console button while the
+      Console is open. **View → Tool Windows** lists Git and Console.
 
 ## Large history
 

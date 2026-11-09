@@ -1,6 +1,7 @@
 //! UI tests with GPUI's `TestAppContext` (headless, no GPU): the Log loads, selects and scrolls,
-//! an arrow click jumps, Page Down pages by the visible rows, Refresh reaches the worker, the Git
-//! tool window toggles and gives focus back (to the active tab when shown), Open Recent opens by
+//! an arrow click jumps, Page Down pages by the visible rows, Refresh reaches the worker, the Log
+//! fills the main area with focus, the Console tool window shows/hides (removed entirely, its
+//! height kept) and gives focus back to the Log, Cmd/Alt+9 focuses the Log, Open Recent opens by
 //! path, and a folder opens in one window only. Every git (the tests' and the app's) runs with an
 //! empty global config, no system config and no inherited repository redirection.
 //!
@@ -18,8 +19,10 @@ use gpui::{
     WindowHandle,
 };
 use gpui_component::Root;
-use gpui_component::dock::{DockLayout, DockPlacement};
-use ig_app::actions::{ActivateVersionControlToolWindow, HideActiveWindow};
+use gpui_component::dock::DockPlacement;
+use ig_app::actions::{
+    ActivateConsoleToolWindow, ActivateVersionControlToolWindow, HideActiveWindow,
+};
 use ig_app::app::{AppState, GitEnvironment};
 use ig_app::log::model::{LogModel, LogState};
 use ig_app::menus::OpenRecent;
@@ -319,82 +322,187 @@ fn binding(cx: &mut TestAppContext, window: AnyWindowHandle, action: &dyn gpui::
         .unwrap()
 }
 
-#[gpui::test]
-fn git_tool_window_toggles_and_returns_focus(cx: &mut TestAppContext) {
-    let dir = repo(3);
-    let config = tempfile::tempdir().unwrap();
-    init_app(cx, config.path());
-    let window = project_window(cx, dir.path());
-    let any: AnyWindowHandle = window.into();
-    cx.run_until_parked();
-    let project = project_in(cx, any).unwrap();
-    let focused = |cx: &mut TestAppContext,
-                   handle: &dyn Fn(&ProjectWindow, &gpui::App) -> FocusHandle| {
-        window
+/// A project window's handles for the layout tests.
+struct Shell {
+    window: WindowHandle<Root>,
+    any: AnyWindowHandle,
+    project: Entity<ProjectWindow>,
+}
+
+impl Shell {
+    fn open(cx: &mut TestAppContext, root: &Path) -> Shell {
+        let window = project_window(cx, root);
+        let any: AnyWindowHandle = window.into();
+        cx.run_until_parked();
+        let project = project_in(cx, any).unwrap();
+        Shell {
+            window,
+            any,
+            project,
+        }
+    }
+
+    fn log_focused(&self, cx: &mut TestAppContext) -> bool {
+        self.focused(cx, |p, cx| p.log_view.read(cx).focus_handle(cx))
+    }
+
+    fn console_focused(&self, cx: &mut TestAppContext) -> bool {
+        self.focused(cx, |p, cx| p.console.read(cx).focus_handle(cx))
+    }
+
+    fn focused(
+        &self,
+        cx: &mut TestAppContext,
+        handle: impl Fn(&ProjectWindow, &gpui::App) -> FocusHandle,
+    ) -> bool {
+        let project = self.project.clone();
+        self.window
             .update(cx, |_, window, cx| {
                 handle(project.read(cx), cx).is_focused(window)
             })
             .unwrap()
-    };
-    let log = |p: &ProjectWindow, cx: &gpui::App| p.log_view.read(cx).focus_handle(cx);
-    let editor = |p: &ProjectWindow, cx: &gpui::App| p.editor.read(cx).focus_handle(cx);
-    let console = |p: &ProjectWindow, cx: &gpui::App| p.console.read(cx).focus_handle(cx);
-    assert!(project.read_with(cx, |p, cx| p.is_git_tool_window_open(cx)));
-    assert!(focused(cx, &log));
+    }
 
-    // Escape-style hide with the real binding: focus goes to the editor area (keys no longer
-    // reach the hidden table)
-    let hide = binding(cx, any, &HideActiveWindow);
-    let show = binding(cx, any, &ActivateVersionControlToolWindow);
-    cx.simulate_keystrokes(any, &hide);
-    cx.run_until_parked();
-    assert!(!project.read_with(cx, |p, cx| p.is_git_tool_window_open(cx)));
-    assert!(focused(cx, &editor));
-    assert!(!focused(cx, &log));
+    fn console_open(&self, cx: &mut TestAppContext) -> bool {
+        self.project.read_with(cx, |p, cx| p.is_console_open(cx))
+    }
 
-    // window actions still dispatch from there; showing focuses the active tab (the Log)
-    cx.simulate_keystrokes(any, &show);
-    cx.run_until_parked();
-    assert!(project.read_with(cx, |p, cx| p.is_git_tool_window_open(cx)));
-    assert!(focused(cx, &log));
+    /// Whether the dock has a bottom dock at all (a hidden tool window leaves none).
+    fn has_bottom_dock(&self, cx: &mut TestAppContext) -> bool {
+        self.project
+            .read_with(cx, |p, cx| p.dock.read(cx).has_dock(DockPlacement::Bottom))
+    }
 
-    // with the Console tab active, hiding and showing focuses the Console
-    window
+    fn console_height(&self, cx: &mut TestAppContext) -> Option<gpui::Pixels> {
+        self.project
+            .read_with(cx, |p, cx| p.dock.read(cx).dock_size(DockPlacement::Bottom))
+    }
+
+    fn press(&self, cx: &mut TestAppContext, action: &dyn gpui::Action) {
+        let keys = binding(cx, self.any, action);
+        cx.simulate_keystrokes(self.any, &keys);
+        cx.run_until_parked();
+    }
+
+    fn dispatch(&self, cx: &mut TestAppContext, action: impl gpui::Action) {
+        cx.dispatch_action(self.any, action);
+        cx.run_until_parked();
+    }
+}
+
+#[gpui::test]
+fn the_log_fills_the_main_area_and_has_focus_at_start(cx: &mut TestAppContext) {
+    let dir = repo(3);
+    let config = tempfile::tempdir().unwrap();
+    init_app(cx, config.path());
+    let shell = Shell::open(cx, dir.path());
+    // the main area holds the Log alone (no editor placeholder); the Console starts hidden, with
+    // no bottom dock at all
+    let center: Vec<&'static str> = shell.project.read_with(cx, |p, cx| {
+        let dock = p.dock.read(cx);
+        dock.layout(DockPlacement::Center)
+            .unwrap()
+            .panels()
+            .filter_map(|id| dock.panel(id))
+            .map(|panel| panel.panel_name(cx))
+            .collect()
+    });
+    assert_eq!(center, [ig_app::log::view::PANEL_NAME]);
+    assert!(!shell.console_open(cx));
+    assert!(!shell.has_bottom_dock(cx));
+    assert!(shell.log_focused(cx));
+}
+
+#[gpui::test]
+fn the_console_tool_window_shows_hides_and_keeps_its_height(cx: &mut TestAppContext) {
+    let dir = repo(3);
+    let config = tempfile::tempdir().unwrap();
+    init_app(cx, config.path());
+    let shell = Shell::open(cx, dir.path());
+
+    // showing docks it at the bottom and focuses it
+    shell.dispatch(cx, ActivateConsoleToolWindow);
+    assert!(shell.console_open(cx));
+    assert!(shell.console_focused(cx));
+    assert!(!shell.log_focused(cx));
+    // the user resizes it
+    let resized = gpui::px(333.0);
+    shell
+        .window
         .update(cx, |_, window, cx| {
-            let dock = project.read(cx).dock.clone();
+            let dock = shell.project.read(cx).dock.clone();
             dock.update(cx, |dock, cx| {
-                let panels: Vec<_> = dock
-                    .layout(DockPlacement::Bottom)
-                    .unwrap()
-                    .panels()
-                    .filter_map(|id| dock.panel(id).cloned())
-                    .collect();
-                assert_eq!(panels.len(), 2);
-                let layout = panels
-                    .into_iter()
-                    .fold(DockLayout::tabs(), |l, p| l.panel_view(p, cx))
-                    .active_index(1);
-                dock.set_dock(DockPlacement::Bottom, layout, window, cx);
+                dock.set_dock_size(DockPlacement::Bottom, resized, window, cx)
             });
         })
         .unwrap();
-    cx.run_until_parked();
-    cx.simulate_keystrokes(any, &hide);
-    cx.run_until_parked();
-    assert!(focused(cx, &editor));
-    cx.simulate_keystrokes(any, &show);
-    cx.run_until_parked();
-    assert!(focused(cx, &console));
-    // directly, not through the focus-lost fallback (the hidden Log tab isn't drawn)
-    window
+    assert_eq!(shell.console_height(cx), Some(resized));
+
+    // Escape-style hide with the real binding: removed entirely (no collapsed header strip left
+    // behind, as IntelliJ's hidden tool windows), focus back on the Log
+    shell.press(cx, &HideActiveWindow);
+    assert!(!shell.console_open(cx));
+    assert!(!shell.has_bottom_dock(cx));
+    assert!(shell.log_focused(cx));
+    assert!(!shell.console_focused(cx));
+
+    // showing again restores its height
+    shell.dispatch(cx, ActivateConsoleToolWindow);
+    assert!(shell.console_open(cx));
+    assert!(shell.console_focused(cx));
+    assert_eq!(shell.console_height(cx), Some(resized));
+
+    // activating it while it's the active tool window hides it (`ActivateToolWindowAction`)
+    shell.dispatch(cx, ActivateConsoleToolWindow);
+    assert!(!shell.has_bottom_dock(cx));
+    assert!(shell.log_focused(cx));
+
+    // HideActiveWindow with the Log focused leaves an open Console alone (it isn't active)
+    shell.dispatch(cx, ActivateConsoleToolWindow);
+    shell.dispatch(cx, ActivateVersionControlToolWindow);
+    assert!(shell.log_focused(cx));
+    shell.press(cx, &HideActiveWindow);
+    assert!(shell.console_open(cx));
+    assert!(shell.log_focused(cx));
+
+    // the stripe button and the header's Hide button (`set_console`) hide it from anywhere
+    shell
+        .window
         .update(cx, |_, window, cx| {
-            project.update(cx, |p, cx| {
-                p.set_git_tool_window(false, window, cx);
-                p.set_git_tool_window(true, window, cx);
-                assert!(console(p, cx).is_focused(window));
-            })
+            shell
+                .project
+                .update(cx, |p, cx| p.set_console(false, window, cx))
         })
         .unwrap();
+    cx.run_until_parked();
+    assert!(!shell.has_bottom_dock(cx));
+    assert!(shell.log_focused(cx));
+    shell
+        .window
+        .update(cx, |_, window, cx| {
+            shell
+                .project
+                .update(cx, |p, cx| p.set_console(true, window, cx))
+        })
+        .unwrap();
+    cx.run_until_parked();
+    assert!(shell.console_focused(cx));
+    assert_eq!(shell.console_height(cx), Some(resized));
+}
+
+#[gpui::test]
+fn activate_version_control_focuses_the_log(cx: &mut TestAppContext) {
+    let dir = repo(3);
+    let config = tempfile::tempdir().unwrap();
+    init_app(cx, config.path());
+    let shell = Shell::open(cx, dir.path());
+    shell.dispatch(cx, ActivateConsoleToolWindow);
+    assert!(shell.console_focused(cx));
+    // Cmd+9 / Alt+9 with the real binding, from the Console: the Log gets focus, the Console
+    // stays open
+    shell.press(cx, &ActivateVersionControlToolWindow);
+    assert!(shell.log_focused(cx));
+    assert!(shell.console_open(cx));
 }
 
 #[gpui::test]

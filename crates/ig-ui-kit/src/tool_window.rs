@@ -4,8 +4,9 @@
 //! Look ported from `platform/platform-impl/src/com/intellij/toolWindow/ToolWindowHeader.kt`,
 //! `.../openapi/wm/impl/content/ContentTabLabel.java` / `TabContentLayout.java` and the
 //! `JBUI.CurrentTheme.ToolWindow` metrics: a 41px header with the tool-window title, the content
-//! tabs (12px side insets, a 3px underline under the selected tab) and a right-aligned toolbar
-//! with the Hide button; a 1px border and a resize edge between the dock and the editor area.
+//! tabs (12px side insets, a 3px underline under the selected tab; unnamed contents get no tab,
+//! and the title drops its colon when no tab is shown) and a right-aligned toolbar with the Hide
+//! button; a 1px border and a resize edge between the dock and the main area.
 //!
 //! Deviations: one title per renderer (IdeaGit has one bottom tool window so far); no tab drag and
 //! drop between docks, no gear/options menu, no split/float view modes.
@@ -49,7 +50,7 @@ impl IjDockRenderer {
     }
 
     /// Like [`new`](Self::new); groups whose panels are all named in `headerless`
-    /// (`Panel::panel_name`) get no header (e.g. the editor area).
+    /// (`Panel::panel_name`) get no header (e.g. the main area's content).
     pub fn with_headerless(
         title: impl Into<SharedString>,
         on_hide: impl Fn(&mut Window, &mut App) + 'static,
@@ -185,11 +186,13 @@ impl TabGroupRenderer for IjToolWindowHeader {
         let theme = cx.ij();
         let t = theme.tokens;
         let active = group.active_ix();
+        // unnamed contents get no tab label; with none named, the header shows just the title
+        // (`ToolWindowContentUi` for a single content without a display name)
         let tabs: Vec<AnyElement> = group
             .panels()
             .iter()
             .enumerate()
-            .filter(|(_, p)| p.visible(cx))
+            .filter(|(_, p)| p.visible(cx) && !tab_name(p, cx).is_empty())
             .map(|(ix, panel)| {
                 let selected = ix == active;
                 let group = group.clone();
@@ -238,7 +241,11 @@ impl TabGroupRenderer for IjToolWindowHeader {
                     div()
                         .font_weight(gpui::FontWeight::SEMIBOLD)
                         .pr(px(4.0))
-                        .child(format!("{}:", self.title)),
+                        .child(if tabs.is_empty() {
+                            self.title.to_string()
+                        } else {
+                            format!("{}:", self.title)
+                        }),
                 )
             })
             .child(div().flex().h_full().children(tabs))

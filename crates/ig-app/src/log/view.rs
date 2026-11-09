@@ -54,6 +54,9 @@ pub struct LogView {
     width: Rc<Cell<f32>>,
 }
 
+/// The Log's dock panel name.
+pub const PANEL_NAME: &str = "GitLog";
+
 impl EventEmitter<PanelEvent> for LogView {}
 
 impl Focusable for LogView {
@@ -64,7 +67,7 @@ impl Focusable for LogView {
 
 impl gpui_component::dock::BasePanel for LogView {
     fn panel_name(&self) -> &'static str {
-        "GitLog"
+        PANEL_NAME
     }
 }
 

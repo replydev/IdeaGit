@@ -102,8 +102,12 @@ pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
 upstream = [
   "platform/vcs-impl/src/com/intellij/openapi/vcs/roots/VcsRootDetectorImpl.java",
   "plugins/git4idea/backend/src/roots/GitRootChecker.java",
+  "platform/vcs-impl/src/com/intellij/openapi/vcs/roots/VcsRootScanner.kt",
 ]
-deviations = ["Simplified: enclosing root below the user home + bounded downward scan; skips a fixed list of tool/cache dirs instead of .gitignore'd dirs"]
+deviations = [
+  "Simplified: enclosing root below the user home + bounded downward scan",
+  "Skips directories matching the default vcs.root.detector.ignore.pattern ([.].*|vendor) as upstream; instead of project-excluded and VCS-ignored roots (isIgnoredFileRoot) it skips node_modules, target and venv",
+]
 
 [modules."ig-log::graph_commit"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
@@ -851,6 +855,8 @@ deviations = [
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
 upstream = [
   "platform/vcs-log/impl/src/com/intellij/vcs/log/ui/table/VcsLogGraphTable.java",
+  "platform/util/ui/src/com/intellij/ui/ColorUtil.java",
+  "platform/util/ui/src/com/intellij/ui/MixedColorProducer.java",
 ]
 
 [modules."ig-app::log::graph_painter"]
@@ -1019,7 +1025,10 @@ upstream = [
 deviations = [
   "The status-bar branch is the project folder's repository or else the first root (upstream guesses from the selected file); no tag name for a detached HEAD on a tag, no merge/rebase prefixes",
   "Refresh on window activation, throttled to one per 500 ms (upstream refreshes from VFS events after frame activation)",
-  "When focus is lost (nothing focused), it returns to the active Git tool window tab or the editor placeholder, so window actions keep dispatching (GPUI dispatches only from the root element otherwise)",
+  "The Log is shown in the main area, as IntelliJ's Log editor tab; the Git console is its own tool window, not a tab of the Git tool window; there is no editor area yet",
+  "The Git stripe button and ActivateVersionControlToolWindow focus the Log (it can't be hidden; the button is always selected); the Console stripe button toggles the Console tool window, and the IdeaGit action ActivateConsoleToolWindow behaves like ActivateToolWindowAction",
+  "A hidden Console is removed from the dock (gpui-component keeps a header strip for a closed dock) and restored at its last height",
+  "When focus is lost (nothing focused), it returns to the Log, so window actions keep dispatching (GPUI dispatches only from the root element otherwise)",
 ]
 
 [modules."ig-app::screenshots"]
