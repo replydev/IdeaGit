@@ -9,17 +9,20 @@ of JetBrains s.r.o.
 
 ## Status
 
-Early development. There is no runnable application yet: the repository contains the headless core libraries the
-UI will build on.
+Early development. The first runnable build opens a folder, shows IntelliJ's New UI look (theme, icons, fonts,
+tool-window stripes) and browses the Git history in a read-only **Log** tab with IntelliJ's commit graph, next to the
+**Git Console**. Light and dark themes follow the OS appearance.
 
 | Crate | What it does | Ported from (IntelliJ Community) |
 |---|---|---|
-| [`ig-git`](crates/ig-git) | Runs the `git` CLI the way IntelliJ does (same flags, environment, locking and Git console events). Parses `git status`, refs and remotes, and reads repository state (merge, rebase, cherry-pick, revert, detached HEAD, worktrees, reftable). Detects repository roots. | [`plugins/git4idea`](https://github.com/JetBrains/intellij-community/tree/b3c1c1958bc81cc96ea882fd4beba72849c1ed98/plugins/git4idea) |
-| [`ig-log`](crates/ig-log) | The Git Log commit graph: building, lane layout, and per-row print elements, colors and arrow actions. | [`platform/vcs-log/graph`](https://github.com/JetBrains/intellij-community/tree/b3c1c1958bc81cc96ea882fd4beba72849c1ed98/platform/vcs-log/graph), [`platform/vcs-log/graph-api`](https://github.com/JetBrains/intellij-community/tree/b3c1c1958bc81cc96ea882fd4beba72849c1ed98/platform/vcs-log/graph-api) |
+| [`ig-git`](crates/ig-git) | Runs the `git` CLI the way IntelliJ does (same flags, environment, locking and Git console events). Parses `git status`, refs and remotes, and reads repository state (merge, rebase, cherry-pick, revert, detached HEAD, worktrees, reftable). Detects repository roots. Reads the log (`git log` parser, ref manager, log provider). | [`plugins/git4idea`](https://github.com/JetBrains/intellij-community/tree/b3c1c1958bc81cc96ea882fd4beba72849c1ed98/plugins/git4idea) |
+| [`ig-log`](crates/ig-log) | The Git Log commit graph: building, lane layout, and per-row print elements, colors and arrow actions. The VCS Log data layer: storage, refs model, sorter, joiners and refresher. | [`platform/vcs-log/graph`](https://github.com/JetBrains/intellij-community/tree/b3c1c1958bc81cc96ea882fd4beba72849c1ed98/platform/vcs-log/graph), [`platform/vcs-log/graph-api`](https://github.com/JetBrains/intellij-community/tree/b3c1c1958bc81cc96ea882fd4beba72849c1ed98/platform/vcs-log/graph-api), [`platform/vcs-log/impl`](https://github.com/JetBrains/intellij-community/tree/b3c1c1958bc81cc96ea882fd4beba72849c1ed98/platform/vcs-log/impl) |
+| [`ig-ui-kit`](crates/ig-ui-kit) | The IntelliJ New UI look on [GPUI](https://www.gpui.rs/): generated theme tokens, `expui` icons, Inter and JetBrains Mono, New UI metrics, the graph palette, tool-window stripes and headers, status bar, notifications. | `platform/platform-resources` themes, `platform/icons`, `JBUI` |
+| [`ig-app`](crates/ig-app) | The `ideagit` application: welcome and project windows, menus and keymap, the Git tool window with the Log (graph and label painters, background log worker) and the Console. | [`platform/vcs-log/impl`](https://github.com/JetBrains/intellij-community/tree/b3c1c1958bc81cc96ea882fd4beba72849c1ed98/platform/vcs-log/impl) UI, `GitConsole` |
+| [`xtask`](xtask) | `cargo xtask import-ui` imports the UI resources from the pinned upstream commit; `cargo xtask screenshots` renders the Log to PNG. | |
 
-Planned next: loading Git history into the Log, then the [GPUI](https://www.gpui.rs/) application shell, Git Log UI,
-Commit tool window, diff and merge, and branches, fetch, pull and push. See the
-[design spec](docs/superpowers/specs/2026-11-08-ideagit-rust-design.md) and the
+Planned next: the Git Log UI (details, changes, filters, actions), Commit tool window, diff and merge, and branches,
+fetch, pull and push. See the [design spec](docs/superpowers/specs/2026-11-08-ideagit-rust-design.md) and the
 [implementation plans](docs/superpowers/plans).
 
 ## How the port relates to IntelliJ IDEA
@@ -45,15 +48,23 @@ Useful official references:
   <https://github.com/JetBrains/intellij-community/tree/master/plugins/git4idea>
 - VCS Log sources: <https://github.com/JetBrains/intellij-community/tree/master/platform/vcs-log>
 
-## Building and testing
+## Building, running and testing
 
-Requires Rust 1.85 or newer and `git` 2.17 or newer (2.19.2 on Windows).
+Requires Rust 1.95 or newer and `git` 2.17 or newer (2.19.2 on Windows). On Linux, GPUI needs the X11, Wayland,
+Vulkan and fontconfig development packages; see `.github/workflows/ci.yml` for the list. On Windows it needs
+`llvm-rc` (from LLVM).
+
+Zed's gpui revision is pinned only in `Cargo.lock`, so always pass `--locked`:
 
 ```bash
-cargo build --all
-cargo test --all
-cargo clippy --all-targets -- -D warnings
+cargo run --locked -p ig-app -- [path]   # opens a folder, or the welcome window
+cargo test --locked --all
+cargo clippy --locked --all-targets -- -D warnings
 ```
+
+UI resources are imported from an intellij-community clone at the pinned commit with
+`cargo xtask import-ui --upstream <clone>`. Before a release, run through
+[`docs/app-shell-checklist.md`](docs/app-shell-checklist.md).
 
 ## License
 

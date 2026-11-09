@@ -24,3 +24,11 @@ Known compromises, why we accepted them, and how to pay them down. Keep each ent
   - Every build and CI command uses `--locked`.
   - Bump with `cargo update -p gpui@0.2.2 --precise <zed sha>`, using the sha that a gpui-kit commit's own `Cargo.lock` records.
   - Never run a plain `cargo update`. It would move Zed to the tip of its default branch.
+
+## App shell gaps left by Plan 3 (2026-11-09)
+
+- **Dock resize:** our `IjDockRenderer` edge doesn't emit `DockEvent::LayoutChanged` after a resize and doesn't reopen a closed bottom dock when dragged, as gpui-component's own skin does. Fix this with layout persistence.
+- **Log cancellation:** closing a window cancels the log worker between steps, but doesn't reach inside `VcsLogRefresher` or kill a running `git` process. A long first load of a huge repository keeps running in the background until it finishes. Pay down with runner cancellation (already open from Plan 2c).
+- **Status-bar branch widget:** shows one repository's branch or a short hash. It doesn't show the tag name for a detached HEAD on a tag, or the merge/rebase/cherry-pick/revert prefixes of `GitBranchWidget`.
+- **Synchronous work on the UI thread:** `detect_roots` and `Git::detect` (after saving a git path) run on the UI thread. Moving them off needs a way to keep "one window per folder" while opening is asynchronous.
+- **Windows and Linux are unverified** until CI runs the GPUI build there (see the CI notes in the app-shell plan).
