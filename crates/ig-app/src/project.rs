@@ -283,6 +283,9 @@ impl ProjectWindow {
         content: &str,
         cx: &mut Context<Self>,
     ) {
+        // a repeated failure (e.g. a worker crashing on every restart) replaces its balloon
+        self.notices
+            .retain(|n| n.title != title || n.content != content);
         self.next_notice += 1;
         self.notices.push(Notice {
             id: self.next_notice,

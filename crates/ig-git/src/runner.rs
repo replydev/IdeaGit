@@ -341,20 +341,14 @@ impl Git {
                     line: line.clone(),
                 });
             }
-            // MSRV 1.85: no let-chains
-            #[allow(clippy::collapsible_if)]
-            if panic_payload.is_none() {
-                if let Some(listener) = listener.as_mut() {
-                    if let Err(payload) =
-                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            listener(&line, kind)
-                        }))
-                    {
-                        // Stop calling the listener but keep draining, so the readers finish and
-                        // the child is reaped; the panic is resumed after cleanup.
-                        panic_payload = Some(payload);
-                    }
-                }
+            if panic_payload.is_none()
+                && let Some(listener) = listener.as_mut()
+                && let Err(payload) =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| listener(&line, kind)))
+            {
+                // Stop calling the listener but keep draining, so the readers finish and the
+                // child is reaped; the panic is resumed after cleanup.
+                panic_payload = Some(payload);
             }
             match kind {
                 OutputKind::Stdout => {
