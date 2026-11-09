@@ -21,10 +21,19 @@ impl AssetSource for Assets {
     fn list(&self, path: &str) -> gpui::Result<Vec<SharedString>> {
         Ok(ICONS
             .iter()
-            .filter(|(name, _)| name.starts_with(path))
+            .filter(|(name, _)| in_dir(name, path))
             .map(|(name, _)| SharedString::new_static(name))
             .collect())
     }
+}
+
+/// Whether `name` is `dir` itself or lies below it (prefix match on a `/` boundary).
+fn in_dir(name: &str, dir: &str) -> bool {
+    let dir = dir.trim_end_matches('/');
+    dir.is_empty()
+        || name
+            .strip_prefix(dir)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
 }
 
 fn lookup(path: &str) -> Option<&'static [u8]> {
@@ -64,6 +73,14 @@ mod tests {
     #[test]
     fn table_is_sorted_for_binary_search() {
         assert!(ICONS.windows(2).all(|w| w[0].0 < w[1].0));
+    }
+
+    #[test]
+    fn list_matches_on_a_directory_boundary() {
+        assert!(in_dir("icons/vcs/branch.svg", "icons/vcs"));
+        assert!(in_dir("icons/vcs/branch.svg", "icons/vcs/"));
+        assert!(!in_dir("icons/vcs2/branch.svg", "icons/vcs"));
+        assert!(in_dir("icons/vcs/branch.svg", ""));
     }
 
     #[test]

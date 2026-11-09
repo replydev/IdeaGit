@@ -50,8 +50,11 @@ pub const TOOL_WINDOW_HEADER_TOOLBAR_RIGHT: f32 = 8.0;
 pub const TOOL_WINDOW_HEADER_TAB_PADDING: f32 = 12.0;
 /// `JBUI.CurrentTheme.ToolWindow.headerTabUnderlineArc()` (`ToolWindow.HeaderTab.underlineArc`).
 pub const TOOL_WINDOW_HEADER_TAB_ARC: f32 = 4.0;
-/// `JBUI.CurrentTheme.ToolWindow.underlineHeight()`: `DefaultTabs.UNDERLINE_HEIGHT` (2).
-pub const TOOL_WINDOW_TAB_UNDERLINE_HEIGHT: f32 = 2.0;
+/// `JBUI.CurrentTheme.ToolWindow.underlineHeight()` (JBUI.java): `ToolWindow.HeaderTab.underlineHeight`,
+/// defaulting to `DefaultTabs.UNDERLINE_HEIGHT` (`DefaultTabs.underlineHeight`, 3). Neither
+/// `expUI_light.theme.json` nor `expUI_dark.theme.json` (nor their parents) sets the
+/// `HeaderTab.underlineHeight` key (the `underlineHeight: 4` there is `EditorTabs`), so it is 3.
+pub const TOOL_WINDOW_TAB_UNDERLINE_HEIGHT: f32 = 3.0;
 
 /// `JBUI.CurrentTheme.Toolbar.defaultStripeToolbarButtonSize()`: 40 x 40.
 pub const STRIPE_BUTTON_SIZE: f32 = 40.0;
@@ -61,9 +64,10 @@ pub const STRIPE_BUTTON_ICON_SIZE: f32 = 20.0;
 /// removes `JBUI.CurrentTheme.Toolbar.stripeToolbarButtonIconPadding` (default `insets(5)`) from
 /// the 40x40 button, leaving 30x30.
 pub const STRIPE_BUTTON_HIGHLIGHT_SIZE: f32 = 30.0;
-/// `IdeaActionButtonLook.getButtonArc()`: `DarculaUIUtil.BUTTON_ARC` (`Button.arc`, 8 in the
-/// expUI themes). Java arcs are diameters, so the corner radius is half.
-pub const STRIPE_BUTTON_HIGHLIGHT_ARC: f32 = 8.0;
+/// `SquareStripeButtonLook.getButtonArc()` = `JBUI.CurrentTheme.Toolbar.stripeButtonArc(compact)`
+/// = `Button.ToolWindow.arc`, default 12 (8 in compact mode; the expUI themes do not set it).
+/// Java arcs are diameters, so the corner radius is half.
+pub const STRIPE_BUTTON_HIGHLIGHT_ARC: f32 = 12.0;
 /// Stripe width: one button plus 1px separator (`ToolWindowToolbar`'s border).
 pub const STRIPE_WIDTH: f32 = STRIPE_BUTTON_SIZE + 1.0;
 

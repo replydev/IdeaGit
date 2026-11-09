@@ -30,6 +30,12 @@ fn main() {
     let mut files = Vec::new();
     collect(&icons, &icons, &mut files);
     files.sort();
+    if files.is_empty() {
+        println!(
+            "cargo::warning=ig-ui-kit: no SVGs found in {} (missing or empty; run `cargo xtask import-ui`), no icons are embedded",
+            icons.display()
+        );
+    }
     let mut code = String::from("pub(crate) static ICONS: &[(&str, &[u8])] = &[\n");
     for (name, path) in &files {
         println!("cargo::rerun-if-changed={}", path.display());

@@ -128,4 +128,22 @@ fn silent_commands_reach_only_the_silent_hook() {
         line.contains("status") && line.contains("--porcelain"),
         "{line}"
     );
+    let silent_count = silent.len();
+    drop(silent);
+
+    // A non-silent command is the reverse: a Started event and no silent_command call.
+    let events_before = sink.events.lock().unwrap().len();
+    let mut checkout = g.handler(tmp.path(), GitCommand::CHECKOUT);
+    isolate(&mut checkout);
+    checkout.add_parameters(["-b", "feature"]);
+    assert!(g.run_command(checkout).success());
+    assert_eq!(sink.silent.lock().unwrap().len(), silent_count);
+    let events = sink.events.lock().unwrap();
+    assert!(
+        matches!(
+            events[events_before..].first(),
+            Some(ConsoleEvent::Started { command_line, .. }) if command_line.contains("checkout")
+        ),
+        "{events:?}"
+    );
 }

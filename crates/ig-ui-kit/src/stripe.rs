@@ -93,6 +93,7 @@ impl RenderOnce for StripeButton {
                 })
             })
             .size(px(STRIPE_BUTTON_SIZE))
+            .cursor_pointer()
             .flex()
             .items_center()
             .justify_center()

@@ -8,6 +8,7 @@
 //! Deviations: no balloon animation or timeout, no "Don't show again", no event log.
 
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -57,7 +58,13 @@ impl Action {
     }
 }
 
-fn render_actions(id: &ElementId, actions: Vec<Action>, cx: &App) -> Vec<AnyElement> {
+/// The container id for a banner's/balloon's actions: a child of the element's own id, so the
+/// per-action ids below stay unique without formatting a string per frame.
+fn actions_id(id: &ElementId) -> ElementId {
+    ElementId::NamedChild(Arc::new(id.clone()), SharedString::new_static("actions"))
+}
+
+fn render_actions(actions: Vec<Action>, cx: &App) -> Vec<AnyElement> {
     let link = color(cx.ij().tokens.link);
     actions
         .into_iter()
@@ -65,7 +72,7 @@ fn render_actions(id: &ElementId, actions: Vec<Action>, cx: &App) -> Vec<AnyElem
         .map(|(ix, action)| {
             let handler = action.handler;
             div()
-                .id((SharedString::from(format!("{id}-action")), ix))
+                .id(("action", ix))
                 .text_color(link)
                 .cursor_pointer()
                 .hover(|d| d.underline())
@@ -114,7 +121,8 @@ impl RenderOnce for Banner {
             Severity::Warning => (t.banner_warning_background, t.banner_warning_border),
             Severity::Error => (t.banner_error_background, t.banner_error_border),
         };
-        let actions = render_actions(&self.id, self.actions, cx);
+        let actions_id = actions_id(&self.id);
+        let actions = render_actions(self.actions, cx);
         div()
             .id(self.id)
             .flex()
@@ -129,8 +137,17 @@ impl RenderOnce for Banner {
             .text_size(px(UI_FONT_SIZE))
             .text_color(color(t.foreground))
             .child(icon(self.severity.icon(), theme.dark, 16.0))
-            .child(div().flex_1().child(self.text))
-            .children(actions)
+            .child(div().flex_1().min_w_0().child(self.text))
+            .when(!actions.is_empty(), |d| {
+                d.child(
+                    div()
+                        .id(actions_id)
+                        .flex()
+                        .items_center()
+                        .gap(px(8.0))
+                        .children(actions),
+                )
+            })
     }
 }
 
@@ -170,7 +187,8 @@ impl RenderOnce for Balloon {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.ij();
         let t = theme.tokens;
-        let actions = render_actions(&self.id, self.actions, cx);
+        let actions_id = actions_id(&self.id);
+        let actions = render_actions(self.actions, cx);
         div()
             .id(self.id)
             .w(px(360.0))
@@ -191,13 +209,14 @@ impl RenderOnce for Balloon {
                     .flex_col()
                     .gap(px(4.0))
                     .flex_1()
+                    .min_w_0()
                     .child(
                         div()
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .child(self.title),
                     )
                     .when(!self.content.is_empty(), |d| d.child(self.content))
-                    .child(div().flex().gap(px(12.0)).children(actions)),
+                    .child(div().id(actions_id).flex().gap(px(12.0)).children(actions)),
             )
     }
 }

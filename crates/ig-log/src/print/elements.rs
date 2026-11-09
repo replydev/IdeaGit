@@ -204,3 +204,35 @@ impl PartialEq for EdgePrintElementImpl {
             && self.has_arrow == other.has_arrow
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Manager;
+
+    impl PrintElementPresentationManager for Manager {
+        fn is_selected(&self, _: &crate::api::printer::GraphPrintElement) -> bool {
+            false
+        }
+        fn get_color_id(&self, _: &GraphElement) -> i32 {
+            0
+        }
+    }
+
+    /// IdeaGit addition: `is_terminal` is presentation-only; upstream equality ignores it.
+    #[test]
+    fn terminal_edge_equals_non_terminal_with_same_fields() {
+        let edge = GraphEdge::new(Some(0), None, Some(1), GraphEdgeType::DottedArrowDown);
+        let terminal =
+            EdgePrintElementImpl::terminal(3, 2, EdgePrintElementType::Down, edge, &Manager);
+        let plain =
+            EdgePrintElementImpl::new(3, 2, 2, EdgePrintElementType::Down, edge, true, &Manager);
+        assert!(terminal.is_terminal());
+        assert!(!plain.is_terminal());
+        assert_eq!(terminal, plain);
+        let other_row =
+            EdgePrintElementImpl::new(4, 2, 2, EdgePrintElementType::Down, edge, true, &Manager);
+        assert_ne!(terminal, other_row);
+    }
+}

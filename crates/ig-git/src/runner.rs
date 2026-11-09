@@ -285,6 +285,8 @@ impl Git {
                 command_line: handler.printable_command_line(),
             });
         } else {
+            // A silent command started (read or write); may run under the per-project write lock,
+            // so the sink has the same re-entrancy rule as `event`.
             self.console
                 .silent_command(handler.working_dir(), &handler.printable_command_line());
         }

@@ -63,13 +63,14 @@ impl IjDockRenderer {
     }
 }
 
-/// Drag payload of the dock's resize edge.
+/// Drag payload of the dock's resize edge; carries the dock being resized, as
+/// `on_drag_move::<ResizeDock>` fires for every dock listening for the type.
 #[derive(Clone)]
-struct ResizeDock;
+struct ResizeDock(DockPlacement);
 
 impl gpui::Render for ResizeDock {
     fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
-        div()
+        gpui::Empty
     }
 }
 
@@ -103,9 +104,14 @@ impl DockAreaRenderer for IjDockRenderer {
                 DockPlacement::Left => d.top_0().right_0().h_full().w(px(4.0)).cursor_col_resize(),
                 _ => d.top_0().left_0().h_full().w(px(4.0)).cursor_col_resize(),
             })
-            .on_drag(ResizeDock, |_, _, _, cx| cx.new(|_| ResizeDock))
+            .on_drag(ResizeDock(placement), |payload, _, _, cx| {
+                cx.stop_propagation();
+                cx.new(|_| payload.clone())
+            })
             .on_drag_move::<ResizeDock>(move |e, window, cx| {
-                resize.resize_to(e.event.position, window, cx)
+                if e.drag(cx).0 == placement {
+                    resize.resize_to(e.event.position, window, cx)
+                }
             });
         div()
             .relative()
@@ -168,8 +174,8 @@ impl TabGroupRenderer for IjToolWindowHeader {
     }
 
     fn render_tab_bar(&self, group: &TabGroupContext, _: &mut Window, cx: &mut App) -> AnyElement {
-        if !group.panels().is_empty()
-            && group
+        if group.panels().is_empty()
+            || group
                 .panels()
                 .iter()
                 .all(|p| self.headerless.contains(&p.panel_name(cx)))
@@ -191,6 +197,7 @@ impl TabGroupRenderer for IjToolWindowHeader {
                     .id(("ij-tool-window-tab", ix))
                     .relative()
                     .h_full()
+                    .cursor_pointer()
                     .flex()
                     .items_center()
                     .px(px(TOOL_WINDOW_HEADER_TAB_PADDING))
@@ -226,18 +233,21 @@ impl TabGroupRenderer for IjToolWindowHeader {
             .bg(color(t.tool_window_header_background))
             .text_size(px(UI_FONT_SIZE))
             .text_color(color(t.foreground))
-            .child(
-                div()
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .pr(px(4.0))
-                    .child(format!("{}:", self.title)),
-            )
+            .when(!self.title.is_empty(), |d| {
+                d.child(
+                    div()
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .pr(px(4.0))
+                        .child(format!("{}:", self.title)),
+                )
+            })
             .child(div().flex().h_full().children(tabs))
             .child(div().flex_1())
             .child(
                 div()
                     .id("ij-tool-window-hide")
                     .size(px(24.0))
+                    .cursor_pointer()
                     .rounded(px(4.0))
                     .flex()
                     .items_center()

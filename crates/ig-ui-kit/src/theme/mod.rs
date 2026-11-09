@@ -105,6 +105,8 @@ impl IjTheme {
         c.link = color(t.link);
         c.scrollbar_thumb = color(t.scrollbar_thumb);
         c.scrollbar_thumb_hover = color(t.scrollbar_thumb_hover);
+        gpui_component::Theme::sync_base(cx);
+        cx.refresh_windows();
     }
 
     /// Pins the theme: [`sync_with_window`](Self::sync_with_window) stops following the OS
