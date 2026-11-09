@@ -6,6 +6,7 @@
 
 pub mod actions;
 pub mod console;
+pub mod log;
 pub mod logging;
 pub mod paths;
 pub mod settings;
