@@ -44,7 +44,7 @@ impl EdgeStorageWrapper {
     /// Converts with the node ids / indexes of `graph`.
     ///
     /// Captures `Arc<dyn LinearGraph>` clones; a graph that owns its own wrapper (upstream
-    /// `CollapsedGraph`) must pass a `Weak` or index closures to avoid an `Arc` cycle (Plan 2b).
+    /// `CollapsedGraph`) must pass a `Weak` or index closures to avoid an `Arc` cycle.
     pub fn for_graph(
         edge_storage: Arc<RwLock<EdgeStorage>>,
         graph: Arc<dyn LinearGraph>,

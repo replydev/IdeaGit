@@ -1,7 +1,7 @@
 //! A linear graph with extra (dotted) edges added and some edges hidden.
 //!
 //! Ported from `platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/LinearGraphWrapper.kt`.
-//! Used by the filter and first-parent controllers (Plan 2b); not on the unfiltered `Normal` path.
+//! Used by the first-parent controller and by linear BEK.
 
 use std::sync::Arc;
 

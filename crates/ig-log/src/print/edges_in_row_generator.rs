@@ -12,8 +12,8 @@
 //! edge index.
 //!
 //! **Caching:** block results are cached FIFO by insertion age (not LRU). Callers must call
-//! [`EdgesInRowGenerator::invalidate`] after the graph changes; Plan 2b's mutating controllers
-//! must clear this cache and the print element generator's row cache together.
+//! [`EdgesInRowGenerator::invalidate`] after the graph changes. The visible graph instead rebuilds
+//! its print element generator (with both caches) after every action that changes the graph.
 //!
 //! **Thread safety:** `Send` but not `Sync` (the caches live in `RefCell`s).
 

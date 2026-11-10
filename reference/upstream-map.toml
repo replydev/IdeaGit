@@ -123,7 +123,6 @@ deviations = ["Int-specialised commit classes not needed; GraphCommitImpl is gen
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
 upstream = ["platform/vcs-log/graph-api/src/com/intellij/vcs/log/graph/PermanentGraph.kt"]
 deviations = [
-  "create_visible_graph returns Result and fails with UnsupportedGraphOptions for Bek, LinearBek, FirstParent and branch/text filters (Plan 2b)",
   "all_commits returns a lazy AllCommits view; the in-branch predicate is a ContainedInBranchCondition",
 ]
 
@@ -158,6 +157,7 @@ upstream = [
 deviations = [
   "AWT Cursor becomes Cursor::{Default, Hand}",
   "The affected element is always a GraphPrintElement (no lookup of foreign PrintElements by equality)",
+  "An affected element whose node indexes are out of the graph's range (a stale element) is dropped from the action instead of throwing",
   "Runnable graph updater becomes GraphUpdater, run through VisibleGraphImpl::run_graph_updater",
 ]
 
@@ -202,11 +202,101 @@ upstream = [
   "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/api/printer/PrintElementGenerator.java",
   "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/api/printer/PrintElementPresentationManager.java",
 ]
-deviations = ["GraphPrintElement is an enum over the two concrete print element types"]
+deviations = [
+  "GraphPrintElement is an enum over the two concrete print element types",
+  "GraphPrintElement::with_graph_element replaces CascadeController.convertPrintElement's delegating object",
+]
 
 [modules."ig-log::utils"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
 upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/TimestampGetter.java"]
+
+[modules."ig-log::utils::bfs_util"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/BfsUtil.kt"]
+tests = ["platform/vcs-log/graph/test/com/intellij/vcs/log/graph/utils/BfsTests.kt"]
+deviations = [
+  "Visited flags are passed to step/walk (GraphUtil.subgraphDifference's flags read another walk's queue, which Rust borrows only allow per step)",
+  "The overridable queue is a BfsQueue type parameter: VecDeque (FIFO) or ReversePriorityQueue (PriorityQueue(reverseOrder()))",
+  "BfsSearch holds a BfsWalk instead of subclassing it",
+  "Upstream quirk kept: BfsSearch's count only grows when a node is found, so the limit never stops the search",
+]
+
+[modules."ig-log::utils::graph_util"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/GraphUtil.kt"]
+tests = ["platform/vcs-log/graph/test/com/intellij/vcs/log/graph/utils/GraphUtilTests.kt"]
+deviations = [
+  "Bug fix: getReachableNodes(null) of an empty graph returns an empty set; upstream calls UnsignedBitSet.set(0, -1), which throws, so an unfiltered CollapsedController cannot be built for an empty repository (tests: utils_extra::reachable_nodes_of_an_empty_graph, graph_options::an_empty_graph_works_with_every_option)",
+  "The LiteLinearGraph / LinearGraph exclusiveNodes overloads are lite_exclusive_nodes / exclusive_nodes; IntSet is HashSet<i32>",
+]
+
+[modules."ig-log::utils::int_hash_set_flags"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/IntHashSetFlags.kt"]
+
+[modules."ig-log::utils::int_list"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/IntList.java"]
+deviations = ["Unused upstream (the graph module's IntLists are fastutil's); kept for the file-to-file mapping"]
+
+[modules."ig-log::utils::int_to_int_map"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/IntToIntMap.java",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/UpdatableIntToIntMap.java",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/impl/AbstractIntToIntMap.java",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/impl/IDIntToIntMap.java",
+]
+deviations = [
+  "AbstractIntToIntMap is a set of functions (abstract_get_short_index, check_*) that implementations call",
+  "IDIntToIntMap.EMPTY is IdIntToIntMap::EMPTY, which implements UpdatableIntToIntMap with a no-op update",
+]
+
+[modules."ig-log::utils::list_int_to_int_map"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/impl/ListIntToIntMap.java"]
+tests = [
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/utils/ListIntToIntMapTest.java",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/utils/UpdatableIntToIntMapTest.java",
+]
+deviations = [
+  "Owns its Flags and exposes them (flags / flags_mut); upstream keeps a reference to flags its owner mutates",
+  "new_instance always returns a ListIntToIntMap; for long_size 0 it behaves like IDIntToIntMap.EMPTY (which upstream returns)",
+]
+
+[modules."ig-log::utils::permanent_list_int_to_int_map"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/impl/PermanentListIntToIntMap.java"]
+tests = [
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/utils/PermanentListIntToIntMapTest.java",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/utils/UpdatableIntToIntMapTest.java",
+]
+deviations = ["new_instance always returns a PermanentListIntToIntMap; for short_size 0 it behaves like upstream's createEmptyIntToIntMap"]
+
+[modules."ig-log::utils::predicate_flags"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/impl/PredicateFlags.java"]
+
+[modules."ig-log::utils::tree_int_to_int_map"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/impl/TreeIntToIntMap.java"]
+tests = [
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/utils/TreeIntToIntMapTest.java",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/utils/UpdatableIntToIntMapTest.java",
+]
+deviations = ["new_instance always returns a TreeIntToIntMap; for long_size 0 it behaves like IDIntToIntMap.EMPTY (which upstream returns)"]
+
+[modules."ig-log::utils::unsigned_bit_set"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/UnsignedBitSet.java"]
+tests = ["platform/vcs-log/graph/test/com/intellij/vcs/log/graph/utils/UnsignedBitSetTest.java"]
+deviations = ["java.util.BitSet becomes JavaBitSet (the subset used: get, set, set range)"]
+
+[modules."ig-log::utils::java_priority_queue"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = []
+deviations = ["IdeaGit helper replacing java.util.PriorityQueue with a comparator: the same binary heap sift order, so elements that tie are polled in Java's order (linear BEK depends on it)"]
 
 [modules."ig-log::utils::flags"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
@@ -355,6 +445,67 @@ deviations = [
   "In-row edges arrive in BTreeSet order instead of Java HashSet order; the edge comparator is not a strict weak order, so ties can resolve differently from IntelliJ in rare rows (mostly rows with not-loaded commit edges) and positions there can differ",
 ]
 
+[modules."ig-log::collapsing::collapsed_graph"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/collapsing/CollapsedGraph.java"]
+tests = [
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/impl/DottedFilterEdgesGeneratorTest.kt",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/impl/InplaceFilterEdgesGeneratorTest.kt",
+]
+deviations = [
+  "State (visibility, node map, edge storage) is shared through Arc<RwLock<_>> by the graph, its compiled graph and its Modifications, so a graph updater (Send + 'static) applies a modification in place (Plan 2 mutation model)",
+  "assertNotUnderModification is replaced by the lock: Modification::apply holds the write lock",
+  "A Modification dropped without apply ends the modification (upstream would refuse every later one, e.g. after an unrun updater)",
+  "updateInstance copies the visibility (upstream shares it with the dropped old graph)",
+  "The compiled graph's edge storage wrapper takes the read lock per call, so no lock is held while another is taken",
+]
+
+[modules."ig-log::collapsing::graph_nodes_visibility"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/collapsing/GraphNodesVisibility.java"]
+deviations = ["Implements Flags itself (upstream: the asFlags() view) so the node map can own it"]
+
+[modules."ig-log::collapsing::tree_set_node_iterator"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/collapsing/TreeSetNodeIterator.java"]
+
+[modules."ig-log::collapsing::fragment_generator"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/collapsing/FragmentGenerator.java"]
+tests = ["platform/vcs-log/graph/test/com/intellij/vcs/log/graph/impl/FragmentGeneratorTest.kt"]
+
+[modules."ig-log::collapsing::linear_fragment_generator"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/collapsing/LinearFragmentGenerator.java"]
+deviations = ["getFragment's gray nodes are a BTreeSet (ascending; Java's HashSet<Integer> order for small indexes); the fragment found does not depend on the order"]
+
+[modules."ig-log::collapsing::dotted_filter_edges_generator"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/collapsing/DottedFilterEdgesGenerator.kt"]
+tests = [
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/impl/DottedFilterEdgesGeneratorTest.kt",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/impl/InplaceFilterEdgesGeneratorTest.kt",
+]
+deviations = [
+  "The abstract class is DottedFilterEdgesGenerator over a DottedFilterEdgesCallbacks implementation; update / hideInplace are free functions",
+  "Upstream quirk kept: hasDottedEdges returns false for the down direction even when it finds a down dotted edge; every caller updates the whole graph, where it does not matter",
+  "Upstream test kept ignored as upstream: DottedFilterEdgesGeneratorTest.anotherRoot (there has to be a 0-6 dotted edge, but there is none)",
+]
+
+[modules."ig-log::collapsing::collapsed_action_manager"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/collapsing/CollapsedActionManager.java"]
+deviations = ["Action cases are functions tried in upstream's order; expand_nodes takes an ordered set (upstream: HashSet)"]
+
+[modules."ig-log::collapsing::collapsed_controller"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/collapsing/CollapsedController.java"]
+deviations = ["Upstream quirk kept: convertToDelegate checks isMyCollapsedEdge with compiled node indexes (the storage is keyed by delegate indexes); delegate actions on edges do nothing in every chain with this controller"]
+
+[modules."ig-log::collapsing::branch_filter_controller"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/collapsing/BranchFilterController.kt"]
+
 [modules."ig-log::collapsing::edge_storage"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
 upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/collapsing/EdgeStorage.java"]
@@ -368,6 +519,42 @@ deviations = [
   "Storage shared through Arc<RwLock<EdgeStorage>>; mutating methods take &self",
   "get_edges skips ids without a node index (upstream: NullPointerException)",
   "get_edges returns a BTreeSet (deterministic order; Java's HashSet order is deterministic, Rust's is not)",
+]
+
+[modules."ig-log::linear_bek::linear_bek_graph"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/linearBek/LinearBekGraph.java"]
+tests = [
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/linearBek/LinearBekExpandTest.kt",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/linearBek/TestUtils.kt",
+]
+deviations = [
+  "LinearBekGraph embeds a LinearGraphWrapper (upstream: subclass); WorkingLinearBekGraph embeds a LinearBekGraph",
+  "Edge sets are BTreeSets (deterministic order; upstream HashSet)",
+]
+
+[modules."ig-log::linear_bek::linear_bek_graph_builder"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/linearBek/LinearBekGraphBuilder.java"]
+tests = [
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/linearBek/LinearBekTest.kt",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/linearBek/LinearBekExpandTest.kt",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/linearBek/TestUtils.kt",
+]
+deviations = [
+  "The edge and magic-set queues are JavaPriorityQueues (Java's tie order)",
+  "GraphEdgeComparator orders edges without a down node by a deterministic hash (upstream's includes the enum's identity hash); such edges never reach the queue",
+  "MergeFragment.collapse visits tail edges and tails in ascending order (upstream: fastutil hash order); the result does not depend on it",
+]
+
+[modules."ig-log::linear_bek::linear_bek_controller"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/linearBek/LinearBekController.kt"]
+deviations = [
+  "The graph builder is created per use (upstream keeps one referencing the compiled graph); BekGraphLayout precomputes its head nodes (get_head_node_index returns a slice)",
+  "collectChildFragments' work list is ordered by insertion with tails and body added ascending (upstream: LinkedHashSet fed from a fastutil set)",
+  "The creation time is not logged",
+  "Upstream quirk kept: iterateMerges' BfsSearch limit never stops it, so hover/click walk up to the first merge that answers",
 ]
 
 [modules."ig-log::facade::base_controller"]
@@ -385,11 +572,81 @@ deviations = ["Interfaces and *Impl classes collapse into structs; edges_replace
 [modules."ig-log::facade::linear_graph_controller"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
 upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/LinearGraphController.kt"]
-deviations = ["compiled_graph returns an Arc handle; LinearGraphAction is GraphAction"]
+deviations = [
+  "compiled_graph returns an Arc handle; LinearGraphAction is GraphAction",
+  "Upstream's downcasts are default methods: delegate / delegate_mut / delegate_graph_changed (is CascadeController), as_any_mut (is FilteredController), supports_collapse (VisibleGraphImpl.isActionSupported)",
+]
 
 [modules."ig-log::facade::linear_graph_wrapper"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
 upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/LinearGraphWrapper.kt"]
+
+[modules."ig-log::facade::sort::sort_index_map"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/sort/SortIndexMap.java"]
+
+[modules."ig-log::facade::sort::sort_checker"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/sort/SortChecker.java"]
+deviations = ["LOG.error (fails tests, logs in production) is a debug_assert!"]
+
+[modules."ig-log::facade::sort::sorted_base_controller"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/sort/SortedBaseController.java"]
+tests = ["platform/vcs-log/graph/test/com/intellij/vcs/log/graph/linearBek/BekTest.kt"]
+
+[modules."ig-log::facade::sort::bek"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = [
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/sort/bek/BekBranch.java",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/sort/bek/BekBranchCreator.java",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/sort/bek/BekBranchMerger.java",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/sort/bek/BekEdgeRestrictions.java",
+  "platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/sort/bek/BekSorter.java",
+]
+tests = [
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/linearBek/BekTest.kt",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/linearBek/TestUtils.kt",
+]
+deviations = [
+  "LOG.assertTrue checks are debug_assert!s; a merger step without an insertable part panics (upstream: NullPointerException)",
+  "BekBranch's prepared part is a range into its node list (upstream: a subList view)",
+]
+
+[modules."ig-log::facade::cascade_controller"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/CascadeController.kt"]
+deviations = [
+  "The abstract class is the CascadeController trait (performAction, convertToDelegate) plus LinearGraphController's delegate / delegate_mut / delegate_graph_changed default methods; perform_linear_graph_action is the template method",
+  "permanentGraphInfo is kept only by the controllers that use it",
+  "convertPrintElement is GraphPrintElement::with_graph_element",
+]
+
+[modules."ig-log::facade::filtered_controller"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/FilteredController.kt"]
+deviations = [
+  "Takes the built CollapsedGraph (upstream: a builder lambda called right away)",
+  "delegateGraphChanged accepts any answer without changes or updater (upstream: identity with DEFAULT_GRAPH_ANSWER); other answers panic like upstream's UnsupportedOperationException, unreachable since a filter never passes actions on and is never below another controller",
+]
+
+[modules."ig-log::facade::first_parent_controller"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/FirstParentController.kt"]
+tests = ["platform/vcs-log/graph/test/com/intellij/vcs/log/graph/impl/facade/FirstParentTest.kt"]
+
+[modules."ig-log::facade::graph_modification_util"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/GraphModificationUtil.kt"]
+deviations = ["The CollapsedGraph / Modification extension functions are free functions; `is FilteredController` is LinearGraphController::as_any_mut + downcast"]
+
+[modules."ig-log::facade::simple_graph_info"]
+pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
+upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/SimpleGraphInfo.java"]
+deviations = [
+  "RowsMapping is the one of permanent::permanent_commits_info_impl (no Int specialisation)",
+  "Upstream quirk kept: branch node ids become node indexes of the source visible graph, not of the new graph",
+]
 
 [modules."ig-log::facade::reachable_nodes"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
@@ -408,10 +665,8 @@ upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/P
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
 upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/PermanentGraphImpl.kt"]
 deviations = [
-  "Only Options.Base(Normal) without filters; others return UnsupportedGraphOptions (Plan 2b)",
-  "Unfiltered Normal uses BaseController directly instead of CollapsedController over an all-visible CollapsedGraph (same compiled graph; no collapse/expand/fragment hover)",
+  "bekIntMap by lazy is a OnceLock<Arc<SortIndexMap>>, computed by the first Bek or LinearBek visible graph and shared by the later ones",
   "Branch node ids sorted ascending before the layout builder",
-  "No bekIntMap / SortedBaseController yet",
   "get_children returns an empty list for unknown or not-loaded commits (upstream throws)",
 ]
 
@@ -420,10 +675,8 @@ pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
 upstream = ["platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/VisibleGraphImpl.kt"]
 deviations = [
   "Implements ActionController itself (upstream inner class)",
-  "BUTTON_COLLAPSE/BUTTON_EXPAND reported unsupported until CollapsedController (Plan 2b)",
-  "buildSimpleGraphInfo / SimpleGraphInfo not ported",
   "Graph updater run via run_graph_updater",
-  "Arrow actions on stale print elements (indices out of range / unknown not-loaded id) are ignored instead of throwing",
+  "Actions on stale print elements (node indexes out of range) are performed without an affected element, and arrows to an unknown not-loaded id are ignored, instead of throwing",
 ]
 
 [modules."ig-log::tests::common"]
@@ -439,6 +692,7 @@ upstream = [
   "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/parser/SimpleCommit.java",
   "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/parser/EdgeNodeCharConverter.java",
   "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/parser/LinearGraphParser.java",
+  "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/linearBek/TestUtils.kt",
 ]
 tests = [
   "platform/vcs-log/graph/test/com/intellij/vcs/log/graph/TestGraphBuilderTest.kt",
@@ -446,7 +700,11 @@ tests = [
   "platform/vcs-log/graph/testData/testGraphBuilder",
   "platform/vcs-log/graph/testData/testParser",
 ]
-deviations = ["Test support code; asTestGraphString and TestPermanentGraphInfo not ported yet (needed by Plan 2b tests)"]
+deviations = [
+  "Test support code; the test_graph! macro accepts the Kotlin graph { } DSL syntax",
+  "TestUtils.kt's runBek / runLinearBek take the built graph (Kotlin builds it twice from the builder lambda)",
+  "TestGraphs.kt is not ported: no upstream test uses it",
+]
 
 # ---- Plan 2c: git log data
 
@@ -871,6 +1129,7 @@ upstream = [
 deviations = [
   "Dash pattern has no phase (GPUI dash arrays)",
   "OUTLINE nodes use the ordinary line thickness",
+  "GraphGeometry::node_center (IdeaGit, for tests) gives the point where element_under finds a node",
 ]
 
 [modules."ig-app::log::labels"]

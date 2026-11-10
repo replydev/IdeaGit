@@ -4,8 +4,8 @@
 //!
 //! Layout mirrors upstream packages: the top-level modules are the public `graph-api`
 //! (`com.intellij.vcs.log.graph`), [`api`] is the internal graph API
-//! (`com.intellij.vcs.log.graph.api`), and [`permanent`], [`mod@print`], [`facade`], [`collapsing`]
-//! and [`utils`] are the `impl` packages. Upstream names are kept in snake_case.
+//! (`com.intellij.vcs.log.graph.api`), and [`permanent`], [`mod@print`], [`facade`], [`collapsing`],
+//! [`linear_bek`] and [`utils`] are the `impl` packages. Upstream names are kept in snake_case.
 //!
 //! Conventions: node indexes, node ids and counts are `i32`, like upstream, because not-loaded
 //! commits have negative ids. Upstream exceptions are panics; upstream `assert` statements (disabled
