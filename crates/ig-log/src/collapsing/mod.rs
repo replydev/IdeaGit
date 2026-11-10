@@ -3,6 +3,9 @@
 //!
 //! Ports `platform/vcs-log/graph/src/com/intellij/vcs/log/graph/collapsing/`; see each submodule.
 
+pub mod branch_filter_controller;
+pub mod collapsed_action_manager;
+pub mod collapsed_controller;
 pub mod collapsed_graph;
 pub mod dotted_filter_edges_generator;
 pub mod edge_storage;

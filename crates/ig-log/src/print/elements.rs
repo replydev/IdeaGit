@@ -49,6 +49,14 @@ impl SimplePrintElementImpl {
     pub fn graph_node(&self) -> GraphNode {
         self.graph_node
     }
+
+    /// The same element for another graph node (`CascadeController.convertPrintElement`).
+    pub(crate) fn with_graph_node(&self, graph_node: GraphNode) -> SimplePrintElementImpl {
+        SimplePrintElementImpl {
+            graph_node,
+            ..self.clone()
+        }
+    }
 }
 
 impl PrintElement for SimplePrintElementImpl {
@@ -152,6 +160,14 @@ impl EdgePrintElementImpl {
 
     pub fn graph_edge(&self) -> GraphEdge {
         self.graph_edge
+    }
+
+    /// The same element for another graph edge (`CascadeController.convertPrintElement`).
+    pub(crate) fn with_graph_edge(&self, graph_edge: GraphEdge) -> EdgePrintElementImpl {
+        EdgePrintElementImpl {
+            graph_edge,
+            ..self.clone()
+        }
     }
 
     pub fn convert_to_line_style(edge_type: GraphEdgeType) -> LineStyle {

@@ -47,6 +47,20 @@ impl GraphPrintElement {
         }
     }
 
+    /// `CascadeController.convertPrintElement`: this print element standing for `graph_element`
+    /// (a node for a node, an edge for an edge; `None` otherwise).
+    pub fn with_graph_element(&self, graph_element: GraphElement) -> Option<GraphPrintElement> {
+        match (self, graph_element) {
+            (GraphPrintElement::Node(node), GraphElement::Node(graph_node)) => {
+                Some(GraphPrintElement::Node(node.with_graph_node(graph_node)))
+            }
+            (GraphPrintElement::Edge(edge), GraphElement::Edge(graph_edge)) => {
+                Some(GraphPrintElement::Edge(edge.with_graph_edge(graph_edge)))
+            }
+            _ => None,
+        }
+    }
+
     fn as_print_element(&self) -> &dyn PrintElement {
         match self {
             GraphPrintElement::Node(node) => node,

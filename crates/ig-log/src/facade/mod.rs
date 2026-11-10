@@ -5,7 +5,11 @@
 //! `FirstParentController.kt`, `GraphModificationUtil.kt` and `SimpleGraphInfo.java`.
 
 pub mod base_controller;
+pub mod cascade_controller;
+pub mod filtered_controller;
+pub mod first_parent_controller;
 pub mod graph_changes;
+pub mod graph_modification_util;
 pub mod linear_graph_controller;
 pub mod linear_graph_wrapper;
 pub mod permanent_graph_impl;

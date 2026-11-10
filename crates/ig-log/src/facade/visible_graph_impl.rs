@@ -8,9 +8,8 @@
 //!   rebuilds the print element generator (upstream wraps the `Runnable`).
 //! - `BUTTON_COLLAPSE` / `BUTTON_EXPAND` are reported unsupported until `CollapsedController`
 //!   is ported (Plan 2b); upstream supports them on every non-filtered graph.
-//! - Arrow actions on a stale print element (one that does not belong to this graph's current
-//!   `print_elements`, e.g. a hover racing a log refresh) are ignored and fall through to the
-//!   controller's default answer; upstream throws.
+//! - An action on a stale print element whose node indexes are out of this graph's range (e.g. a
+//!   hover racing a log refresh) is performed without an affected element; upstream throws.
 //! - `buildSimpleGraphInfo` (`SimpleGraphInfo`) is not ported yet.
 
 use std::collections::HashSet;
@@ -128,16 +127,6 @@ impl<CommitId: 'static> VisibleGraphImpl<CommitId> {
 
         let edge = edge_print_element.graph_edge();
 
-        // A stale element (from an older visible graph) may refer to nodes this graph does not
-        // have: ignore it (deviation: upstream throws).
-        let nodes_count = self.graph_controller.compiled_graph().nodes_count();
-        let in_range = |index: Option<VcsLogVisibleGraphIndex>| {
-            index.is_none_or(|index| (0..nodes_count).contains(&index))
-        };
-        if !in_range(edge.up_node_index) || !in_range(edge.down_node_index) {
-            return None;
-        }
-
         let mut target_id = None;
         if edge.edge_type == GraphEdgeType::NotLoadCommit {
             debug_assert!(edge_print_element.edge_print_type() == EdgePrintElementType::Down);
@@ -188,6 +177,26 @@ impl<CommitId: 'static> VisibleGraphImpl<CommitId> {
         }
     }
 
+    /// Deviation: drops an affected element that refers to nodes this graph does not have (a stale
+    /// element from an older visible graph); upstream throws.
+    fn without_stale_element(&self, mut action: GraphAction) -> GraphAction {
+        let nodes_count = self.graph_controller.compiled_graph().nodes_count();
+        let in_range = |index: Option<VcsLogVisibleGraphIndex>| {
+            index.is_none_or(|index| (0..nodes_count).contains(&index))
+        };
+        let stale = match action.affected_element.as_ref().map(|e| e.graph_element()) {
+            Some(GraphElement::Node(node)) => !in_range(Some(node.node_index)),
+            Some(GraphElement::Edge(edge)) => {
+                !in_range(edge.up_node_index) || !in_range(edge.down_node_index)
+            }
+            None => false,
+        };
+        if stale {
+            action.affected_element = None;
+        }
+        action
+    }
+
     fn convert_answer(answer: LinearGraphAnswer, selection_changed: bool) -> GraphAnswer<CommitId> {
         GraphAnswer {
             cursor_to_set: answer.cursor_to_set,
@@ -201,6 +210,7 @@ impl<CommitId: 'static> VisibleGraphImpl<CommitId> {
 
 impl<CommitId: 'static> ActionController<CommitId> for VisibleGraphImpl<CommitId> {
     fn perform_action(&mut self, graph_action: GraphAction) -> GraphAnswer<CommitId> {
+        let graph_action = self.without_stale_element(graph_action);
         if let Some(graph_answer) = self.perform_arrow_action(&graph_action) {
             return graph_answer;
         }

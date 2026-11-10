@@ -4,7 +4,8 @@
 //! (`BaseTestGraphBuilder`, `TestGraphBuilder`, `graph { }`). Kotlin's `1(2, 3.dot)` becomes
 //! `b.node(1, [u(2), dot(3)])`; `2.UNM(3)` becomes `b.node(unm(2), [u(3)])`. The
 //! [`test_graph!`](crate::common::test_graph_builder::test_graph) macro accepts the Kotlin syntax
-//! itself (`test_graph! { 1(2, 3.dot) 2.UNM(3) 3() }`). Also ports `asTestGraphString`.
+//! itself (`test_graph! { 1(2, 3.dot) 2.UNM(3) 3() }`). Also ports `asTestGraphString` and
+//! `TestPermanentGraphInfo`.
 
 use std::collections::HashMap;
 
@@ -388,4 +389,91 @@ pub fn as_test_graph_string(graph: &(impl LinearGraph + ?Sized), sorted: bool) -
         s.push('\n');
     }
     s
+}
+
+/// `TestPermanentGraphInfo`: a permanent graph info over a test graph whose commit ids are node
+/// ids (and timestamps). Heads are laid out by `heads_order` (by node id if empty).
+pub struct TestPermanentGraphInfo {
+    pub graph: std::sync::Arc<TestLinearGraph>,
+    commit_info: TestCommitsInfo,
+    graph_layout: ig_log::permanent::graph_layout_impl::GraphLayoutImpl,
+    branch_nodes: std::collections::HashSet<i32>,
+}
+
+struct TestCommitsInfo;
+
+impl ig_log::api::permanent::PermanentCommitsInfo<i32> for TestCommitsInfo {
+    fn get_commit_id(&self, node_id: i32) -> i32 {
+        node_id
+    }
+
+    fn try_get_commit_id(&self, node_id: i32) -> Option<i32> {
+        Some(node_id)
+    }
+
+    fn get_timestamp(&self, node_id: i32) -> i64 {
+        node_id as i64
+    }
+
+    fn get_node_id(&self, commit_id: &i32) -> i32 {
+        *commit_id
+    }
+
+    fn convert_to_node_ids(
+        &self,
+        heads: &std::collections::HashSet<i32>,
+    ) -> std::collections::HashSet<i32> {
+        heads.clone()
+    }
+}
+
+impl TestPermanentGraphInfo {
+    pub fn new(
+        graph: TestLinearGraph,
+        heads_order: &[i32],
+        branch_nodes: std::collections::HashSet<i32>,
+    ) -> TestPermanentGraphInfo {
+        let graph_layout = ig_log::permanent::graph_layout_builder::build(&graph, |x, y| {
+            if heads_order.is_empty() {
+                (graph.get_node_id(x) - graph.get_node_id(y)).cmp(&0)
+            } else {
+                let index_of = |n: i32| heads_order.iter().position(|&h| h == n);
+                let t = if index_of(x).is_none() {
+                    x
+                } else if index_of(y).is_none() {
+                    y
+                } else {
+                    -1
+                };
+                if t != -1 {
+                    panic!("Not found headsOrder for {t} node by id");
+                }
+                index_of(x).cmp(&index_of(y))
+            }
+        });
+        TestPermanentGraphInfo {
+            graph: std::sync::Arc::new(graph),
+            commit_info: TestCommitsInfo,
+            graph_layout,
+            branch_nodes,
+        }
+    }
+}
+
+impl ig_log::api::permanent::PermanentGraphInfo<i32> for TestPermanentGraphInfo {
+    fn permanent_commits_info(&self) -> &dyn ig_log::api::permanent::PermanentCommitsInfo<i32> {
+        &self.commit_info
+    }
+
+    fn linear_graph(&self) -> std::sync::Arc<dyn LinearGraph> {
+        self.graph.clone()
+    }
+
+    fn permanent_graph_layout(&self) -> &dyn ig_log::api::GraphLayout {
+        &self.graph_layout
+    }
+
+    fn branch_node_ids(&self) -> &std::collections::HashSet<i32> {
+        &self.branch_nodes
+    }
 }

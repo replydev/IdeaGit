@@ -2,9 +2,18 @@
 //!
 //! Ported from `platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/LinearGraphController.kt`.
 //!
-//! Deviation: `compiled_graph` returns a shared handle; controllers that modify their graph (Plan 2b)
-//! hand out a new handle after each change, and the visible graph re-reads it.
+//! Deviations:
+//! - `compiled_graph` returns a shared handle. Controllers that change their graph change it in
+//!   place or hand out a new handle, and the visible graph re-reads it.
+//! - Upstream's downcasts are default methods: [`LinearGraphController::delegate`] /
+//!   [`delegate_mut`](LinearGraphController::delegate_mut) /
+//!   [`delegate_graph_changed`](LinearGraphController::delegate_graph_changed) for `is
+//!   CascadeController` (`performActionRecursively`), [`as_any_mut`](LinearGraphController::as_any_mut)
+//!   for `is FilteredController` (`GraphModificationUtil`) and
+//!   [`supports_collapse`](LinearGraphController::supports_collapse) for `VisibleGraphImpl`'s
+//!   `isActionSupported`.
 
+use std::any::Any;
 use std::collections::HashSet;
 use std::fmt;
 use std::sync::Arc;
@@ -69,4 +78,31 @@ pub trait LinearGraphController: Send {
     fn compiled_graph(&self) -> Arc<dyn LinearGraph>;
 
     fn perform_linear_graph_action(&mut self, action: &LinearGraphAction) -> LinearGraphAnswer;
+
+    /// The delegate of a `CascadeController`; `None` for other controllers.
+    fn delegate(&self) -> Option<&dyn LinearGraphController> {
+        None
+    }
+
+    /// See [`delegate`](Self::delegate).
+    fn delegate_mut(&mut self) -> Option<&mut dyn LinearGraphController> {
+        None
+    }
+
+    /// `CascadeController.delegateGraphChanged`: called after the delegate answered with
+    /// `delegate_answer`. Only called on controllers with a [`delegate`](Self::delegate).
+    fn delegate_graph_changed(&mut self, delegate_answer: LinearGraphAnswer) -> LinearGraphAnswer {
+        delegate_answer
+    }
+
+    /// For downcasts to a concrete controller; `None` unless the controller opts in.
+    fn as_any_mut(&mut self) -> Option<&mut dyn Any> {
+        None
+    }
+
+    /// Whether `BUTTON_COLLAPSE` / `BUTTON_EXPAND` are supported (upstream: `!is
+    /// FilteredController`).
+    fn supports_collapse(&self) -> bool {
+        true
+    }
 }
