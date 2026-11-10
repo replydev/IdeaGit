@@ -1,0 +1,9 @@
+{
+"1": {"passed": 566, "ignored": 1, "red": "error[E0432]: unresolved import `ig_log::utils::bfs_util`"},
+"2": {"passed": 570, "ignored": 1, "red": "error[E0433]: cannot find `sort` in `facade`"},
+"3": {"passed": 610, "ignored": 2, "red": "error[E0432]: unresolved import `ig_log::collapsing::fragment_generator`"},
+"4": {"passed": 621, "ignored": 2, "red": "error[E0432]: unresolved import `ig_log::collapsing::collapsed_controller`"},
+"5": {"passed": 645, "ignored": 2, "red": "error[E0433]: cannot find `linear_bek` in `ig_log`"},
+"6": {"passed": 650, "ignored": 3, "red": "error[E0599]: no method named `visible_commit_count` found for enum `Result<T, E>` in the current scope"},
+"7": {"passed": 652, "ignored": 3, "red": "error[E0599]: no method named `node_center` found for struct `GraphGeometry` in the current scope"},
+"8": {"passed": 652, "ignored": 3, "red": ""}}

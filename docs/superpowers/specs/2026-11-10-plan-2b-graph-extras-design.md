@@ -14,7 +14,7 @@ This plan comes before the read-only Log UI plan (details, changes tree, filters
 
 In scope:
 - **`ig-log`:** a faithful port of every not-yet-ported source file under `platform/vcs-log/graph/src` (list below), with upstream tests.
-- **`ig-app`:** fragment hover only. Hovering a commit node highlights its linear fragment, as in IntelliJ. The app already sends `MouseOver` graph actions and paints selected print elements (`log/graph_painter.rs`), so this mostly comes from restoring `CollapsedController` on the default path, plus a UI test.
+- **`ig-app`:** fragment hover and click. Hovering a commit node highlights its linear fragment, and a click collapses or expands it, as in IntelliJ (decided after the prototype: with `CollapsedController` back on the default path, clicks collapse upstream too). The app already sends graph actions and paints selected print elements (`log/graph_painter.rs`); after a click it refreshes the rows as upstream's `handleGraphAnswer` does (hover cleared, selection kept by commit). Plus UI tests.
 
 Not in scope:
 - Sort, first-parent, collapse/expand and long-edges controls. They belong in the Log toolbar's View Options popup (Log UI plan). Upstream's default stays: `Options.Base(SortType.Normal)` ("Off", `PermanentGraph.Options.Default`), so the app's graph does not change.
@@ -88,7 +88,7 @@ The test support code these tests need is ported too: `asTestGraphString`, `Test
 
 **IdeaGit-only tests**, marked as such:
 - **Option combinations.** `create_visible_graph` runs every combination of options × visible heads × matched commits, including unknown ids, on a small graph without panicking.
-- **Fragment hover.** A headless GPUI UI test in `crates/ig-app/tests/ui.rs` hovers a node in a repository with a merge and checks that the fragment's elements are painted selected.
+- **Fragment hover and click.** Headless GPUI UI tests in `crates/ig-app/tests/ui.rs` hover a node in a repository with a merge and check that exactly the fragment's elements are painted selected, and that a click collapses the fragment and keeps the row selection.
 - **Performance.** An ignored perf test, next to the existing one, builds `Bek` and `LinearBek` visible graphs on the 50k-commit fixture. Its timings are recorded in the plan. The aim is well under a second, since it runs on the worker.
 
 ## Process
@@ -118,5 +118,5 @@ The final order follows the prototype's actual dependencies.
 - Every option combination works, and `UnsupportedGraphOptions` is gone.
 - All ported upstream tests pass with unchanged expected values.
 - The workspace stays green: `cargo fmt`, `clippy -D warnings`, docs, and tests on Linux, macOS, Windows and MSRV 1.95.
-- Hovering a commit in the running app highlights its fragment, as in IntelliJ.
+- Hovering a commit in the running app highlights its fragment, and a click collapses or expands it, as in IntelliJ.
 - `reference/upstream-map.toml` lists every new module with its upstream files, tests and deviations.
