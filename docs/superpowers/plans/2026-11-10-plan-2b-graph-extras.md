@@ -11968,3 +11968,27 @@ git commit -m 'docs: upstream map for the graph extras (BEK, linear BEK, filters
 
 ---
 
+
+## Execution record
+
+Executed on `feat/graph-extras` (PR #2) and fast-forwarded to `master`. Each task's tree matched its prototype commit and the simulation. Every task review approved; the review fixes are five extra commits:
+
+- **`docs(ig-log)`:** the collapsed graph's lock order (outer graph → delegate graph → edge storage, never the reverse), poisoned locks, per-guard reads, the `BranchFilterController` quirk, `BfsSearch::find` not keeping its result, the BEK `.expect` panics, and the undefined `HashSet` order of `GraphUtil`'s set results.
+- **`fix(ig-log)`:** saturating arithmetic in `SimpleGraphInfo`.
+- **`test(ig-log)`:** exact rows and collapse support for 12 option and filter combinations, a stale out-of-range edge, and the branch filter over linear BEK.
+- **`fix(ig-app)`** (Important): after a click collapsed a fragment, the hand cursor stayed on, because hover is de-duplicated and the collapse answer has no cursor. `drop_hover()` now resets the generation, the hover and the cursor. Upstream resets the cursor on the next mouse move instead.
+- **`fix(ig-app)`:** a lead or anchor hidden by a collapse moves to the top-most selected commit still shown, or to none, as `SelectionSnapshot.restore` does. Upstream picks the last row re-added, in hash-set order.
+
+Final: 660 passed, 3 ignored.
+
+## Notes for the Log UI plan
+
+- **Collapse state is lost on every refresh.** Each snapshot builds a fresh visible graph, as upstream's `VcsLogFiltererImpl` does. The View Options popup, with sort type, first-parent and collapse/expand all, will need the options kept across refreshes.
+- **The app only uses `Options::DEFAULT`.** BEK, linear BEK and first-parent are tested in `ig-log` but nothing in the UI exercises them yet. The first BEK graph computes the BEK map (about 8–11 ms on 50k commits in release), which is cached on the permanent graph.
+- **Selection:** when nothing is selected but the lead and anchor are still shown, they are kept. Upstream resets them to -1.
+- **A click on a node doesn't focus the Log.** `stop_propagation` skips the row's `window.focus`, and Swing focuses the table on mouse press. This is not yet checked against the Swing source.
+- **Possible clean-ups:**
+  - `CascadeController::delegate_mut` could become a required method, instead of `unreachable!` at `cascade_controller.rs`.
+  - `IdIntToIntMap::update` only `debug_assert!`s on a non-empty map; upstream makes only the empty map updatable.
+  - `JavaBitSet::set_range` sets one bit at a time.
+  - `FilteredController::delegate_graph_changed` checks for the default answer more loosely than upstream's identity check. The case is unreachable.
