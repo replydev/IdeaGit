@@ -40,9 +40,12 @@ impl<CommitId: Clone + Eq + Hash + Send + Sync> SimpleGraphInfo<CommitId> {
         visible_row: i32,
         visible_range: i32,
     ) -> SimpleGraphInfo<CommitId> {
-        let start = 0.max(visible_row - visible_range);
+        // saturating: Java wraps for a huge `visible_range`; the clamping below makes saturation sensible
+        let start = 0.max(visible_row.saturating_sub(visible_range));
         // no more than 2*visibleRange commits
-        let end = linear_graph.nodes_count().min(start + 2 * visible_range);
+        let end = linear_graph
+            .nodes_count()
+            .min(start.saturating_add(visible_range.saturating_mul(2)));
         let lite = as_lite_linear_graph(linear_graph);
 
         let mut rows_mapping = RowsMapping::new((end - start).max(0) as usize);
