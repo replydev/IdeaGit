@@ -4,14 +4,17 @@
 //! (`BaseTestGraphBuilder`, `TestGraphBuilder`, `graph { }`). Kotlin's `1(2, 3.dot)` becomes
 //! `b.node(1, [u(2), dot(3)])`; `2.UNM(3)` becomes `b.node(unm(2), [u(3)])`. The
 //! [`test_graph!`](crate::common::test_graph_builder::test_graph) macro accepts the Kotlin syntax
-//! itself (`test_graph! { 1(2, 3.dot) 2.UNM(3) 3() }`).
+//! itself (`test_graph! { 1(2, 3.dot) 2.UNM(3) 3() }`). Also ports `asTestGraphString`.
 
 use std::collections::HashMap;
 
 use ig_log::api::EdgeFilter;
-use ig_log::api::elements::{GraphEdge, GraphEdgeType, GraphNode, GraphNodeType};
+use ig_log::api::elements::{GraphEdge, GraphEdgeType, GraphElement, GraphNode, GraphNodeType};
 use ig_log::api::linear_graph::LinearGraph;
+use ig_log::utils::java_sort;
 use ig_log::utils::linear_graph_utils::{is_edge_down, is_edge_up};
+
+use super::str_utils::graph_element_comparator;
 
 #[derive(Clone, Copy, Debug)]
 pub struct SimpleEdge {
@@ -283,4 +286,106 @@ impl LinearGraph for TestLinearGraph {
     fn get_node_index(&self, node_id: i32) -> Option<i32> {
         self.node_id_to_index.get(&node_id).copied()
     }
+}
+
+/// `LinearGraph.assertEdge`: the edge is consistent with `node_index` and the other end's edges.
+fn assert_edge(graph: &(impl LinearGraph + ?Sized), node_index: i32, edge: &GraphEdge) {
+    if edge.edge_type.is_normal_edge() {
+        if Some(node_index) == edge.up_node_index {
+            assert!(
+                graph
+                    .get_adjacent_edges(edge.down_node_index.unwrap(), EdgeFilter::NormalUp)
+                    .contains(edge)
+            );
+        } else {
+            assert_eq!(Some(node_index), edge.down_node_index);
+            assert!(
+                graph
+                    .get_adjacent_edges(edge.up_node_index.unwrap(), EdgeFilter::NormalDown)
+                    .contains(edge)
+            );
+        }
+    } else {
+        match edge.edge_type {
+            GraphEdgeType::NotLoadCommit | GraphEdgeType::DottedArrowDown => {
+                assert_eq!(Some(node_index), edge.up_node_index);
+                assert_eq!(None, edge.down_node_index);
+            }
+            GraphEdgeType::DottedArrowUp => {
+                assert_eq!(Some(node_index), edge.down_node_index);
+                assert_eq!(None, edge.up_node_index);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// `LinearGraph.asTestGraphString(sorted)`: the graph in the `graph { }` DSL's notation, one node
+/// per line (`id.UNM(edges)`), with the down edges of each node.
+pub fn as_test_graph_string(graph: &(impl LinearGraph + ?Sized), sorted: bool) -> String {
+    let mut s = String::new();
+    for node_index in 0..graph.nodes_count() {
+        let node = graph.get_graph_node(node_index);
+        s.push_str(&graph.get_node_id(node_index).to_string());
+        assert_eq!(
+            node_index,
+            node.node_index,
+            "nodeIndex: {node_index}, but for node with this index(nodeId: {}) nodeIndex: {}",
+            graph.get_node_id(node_index),
+            node.node_index
+        );
+        match node.node_type {
+            GraphNodeType::Unmatched => s.push_str(".UNM"),
+            GraphNodeType::NotLoadCommit => s.push_str(".NOT_LOAD"),
+            GraphNodeType::Usual => {}
+        }
+
+        // edges
+        let mut adjacent_edges = graph.get_adjacent_edges(node_index, EdgeFilter::All);
+        if sorted {
+            let comparator = graph_element_comparator();
+            let mut elements: Vec<GraphElement> =
+                adjacent_edges.into_iter().map(GraphElement::Edge).collect();
+            java_sort::sort_by(&mut elements, |a, b| comparator.ordering(a, b));
+            adjacent_edges = elements
+                .into_iter()
+                .map(|element| match element {
+                    GraphElement::Edge(edge) => edge,
+                    GraphElement::Node(_) => unreachable!(),
+                })
+                .collect();
+        }
+
+        s.push('(');
+        let edges: Vec<String> = adjacent_edges
+            .iter()
+            .filter_map(|it| {
+                assert_edge(graph, node_index, it);
+                if it.up_node_index == Some(node_index) {
+                    let start_id = if it.edge_type.is_normal_edge() {
+                        graph.get_node_id(it.down_node_index.unwrap()).to_string()
+                    } else if let Some(target_id) = it.target_id {
+                        target_id.to_string()
+                    } else {
+                        "null".to_string()
+                    };
+
+                    Some(match it.edge_type {
+                        GraphEdgeType::Usual => start_id,
+                        GraphEdgeType::Dotted => format!("{start_id}.dot"),
+                        GraphEdgeType::DottedArrowUp => format!("{start_id}.up_dot"),
+                        GraphEdgeType::DottedArrowDown => format!("{start_id}.down_dot"),
+                        GraphEdgeType::NotLoadCommit => format!("{start_id}.not_load"),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+        s.push_str(&edges.join(", "));
+
+        s.push(')');
+        s.push('\n');
+    }
+    s
 }

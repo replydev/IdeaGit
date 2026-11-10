@@ -7,6 +7,7 @@
 //! Test data lives in `tests/fixtures/<dir>` (byte-identical copies of `platform/vcs-log/graph/testData`).
 #![allow(dead_code)] // each test crate uses a different subset
 
+pub mod linear_bek;
 pub mod parser;
 pub mod str_utils;
 pub mod test_graph_builder;
