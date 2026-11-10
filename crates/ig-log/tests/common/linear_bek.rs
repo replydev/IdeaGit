@@ -8,6 +8,8 @@ use ig_log::api::linear_graph::LinearGraph;
 use ig_log::facade::sort::bek::bek_sorter;
 use ig_log::facade::sort::sort_checker;
 use ig_log::facade::sort::sorted_base_controller::SortedLinearGraph;
+use ig_log::linear_bek::linear_bek_graph::LinearBekGraph;
+use ig_log::linear_bek::linear_bek_graph_builder::LinearBekGraphBuilder;
 use ig_log::permanent::graph_layout_builder;
 use ig_log::permanent::graph_layout_impl::GraphLayoutImpl;
 use ig_log::utils::TimestampGetter;
@@ -64,4 +66,13 @@ pub fn assert_graph_equals(expected: TestLinearGraph, actual: &(impl LinearGraph
         as_test_graph_string(&expected, false),
         as_test_graph_string(actual, false)
     );
+}
+
+/// `runLinearBek`: takes the graph built by the test's builder (Kotlin builds it twice).
+pub fn run_linear_bek(before_linear_bek: TestLinearGraph) -> LinearBekGraph {
+    let before_linear_bek_layout = build_layout(&before_linear_bek);
+
+    let after_linear_bek = LinearBekGraph::new(Arc::new(before_linear_bek));
+    LinearBekGraphBuilder::new(&after_linear_bek, &before_linear_bek_layout).collapse_all();
+    after_linear_bek
 }

@@ -12,6 +12,7 @@ pub mod int_hash_set_flags;
 pub mod int_int_multi_map;
 pub mod int_list;
 pub mod int_to_int_map;
+pub mod java_priority_queue;
 pub mod java_sort;
 pub mod linear_graph_utils;
 pub mod list_int_to_int_map;

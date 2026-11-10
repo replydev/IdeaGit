@@ -55,6 +55,7 @@ pub mod data;
 pub mod facade;
 pub mod graph_color_manager;
 pub mod graph_commit;
+pub mod linear_bek;
 pub mod permanent;
 pub mod permanent_graph;
 pub mod print;
