@@ -308,3 +308,172 @@ fn simple_graph_info_copies_the_rows_around_a_row() {
             .is_empty()
     );
 }
+
+/// IdeaGit: a huge `visible_range` must not overflow (Java wraps; the clamping makes saturation
+/// give the whole graph).
+#[test]
+fn simple_graph_info_does_not_overflow_for_a_huge_visible_range() {
+    let graph = permanent_graph(GRAPH, &["m0", "b1"]);
+    let visible = graph.create_visible_graph(Options::DEFAULT, None, None);
+    let count = visible.visible_commit_count();
+    for visible_row in [-5, 0, 3, count, i32::MAX] {
+        for visible_range in [i32::MAX, i32::MAX / 2 + 1] {
+            let info = visible.build_simple_graph_info(visible_row, visible_range);
+            assert!(info.linear_graph().nodes_count() <= count);
+        }
+    }
+    let info = visible.build_simple_graph_info(3, i32::MAX);
+    assert_eq!(info.linear_graph().nodes_count(), count);
+    let info = visible.build_simple_graph_info(-5, i32::MAX);
+    assert_eq!(info.linear_graph().nodes_count(), count);
+}
+
+// Expected rows below: Normal keeps the input order; BEK moves the merged branch `f` directly below
+// the merge `m`; LinearBek has the BEK order; filters keep the matched commits reachable from the
+// visible heads in the delegate order; FirstParent follows first parents only (`f` is dropped).
+/// Commits: a merge `m` of `a` and `f`, a second branch tip `x`, and a common base `b`, `c`.
+const OPTIONS_GRAPH: &str = "
+m|-a f
+x|-c
+a|-b
+f|-b
+b|-c
+c|-
+";
+
+fn visible_rows(visible: &VisibleGraphImpl<String>) -> Vec<String> {
+    (0..visible.visible_commit_count())
+        .map(|row| visible.get_row_info(row).commit())
+        .collect()
+}
+
+/// IdeaGit: exact visible rows and collapse support for the option and filter combinations of
+/// `PermanentGraphImpl::createFilteredController`. Collapse / expand are unsupported whenever the
+/// top controller is a `FilteredController` (any commit filter, and first parent), supported
+/// otherwise.
+#[test]
+fn option_and_filter_combinations_show_the_expected_rows() {
+    let graph = permanent_graph(OPTIONS_GRAPH, &["m", "x"]);
+    let bek = Options::Base(SortType::Bek);
+    #[allow(clippy::type_complexity)]
+    let table: Vec<(
+        &str,
+        Options,
+        Option<HashSet<String>>,
+        Option<HashSet<String>>,
+        &[&str],
+        bool,
+    )> = vec![
+        (
+            "bek + commit filter",
+            bek,
+            None,
+            Some(set(&["m", "a", "b", "c"])),
+            &["m", "a", "b", "c"],
+            false,
+        ),
+        (
+            "linear bek + commit filter",
+            Options::LinearBek,
+            None,
+            Some(set(&["m", "a", "b", "c"])),
+            &["m", "a", "b", "c"],
+            false,
+        ),
+        (
+            "first parent + commit filter",
+            Options::FirstParent,
+            None,
+            Some(set(&["m", "x", "a", "b", "c"])),
+            &["m", "x", "a", "b", "c"],
+            false,
+        ),
+        (
+            "normal + branch + commit filter",
+            Options::DEFAULT,
+            Some(set(&["m"])),
+            Some(set(&["m", "x", "a", "f", "c"])),
+            &["m", "a", "f", "c"],
+            false,
+        ),
+        (
+            "bek + branch + commit filter",
+            bek,
+            Some(set(&["m"])),
+            Some(set(&["m", "x", "a", "f", "c"])),
+            &["m", "f", "a", "c"],
+            false,
+        ),
+        (
+            "linear bek + branch + commit filter",
+            Options::LinearBek,
+            Some(set(&["m"])),
+            Some(set(&["m", "x", "a", "f", "c"])),
+            &["m", "f", "a", "c"],
+            false,
+        ),
+        (
+            "first parent + branch + commit filter",
+            Options::FirstParent,
+            Some(set(&["m"])),
+            Some(set(&["m", "x", "a", "f", "c"])),
+            &["m", "a", "c"],
+            false,
+        ),
+        (
+            "first parent alone",
+            Options::FirstParent,
+            None,
+            None,
+            &["m", "x", "a", "b", "c"],
+            false,
+        ),
+        (
+            "linear bek + branch filter",
+            Options::LinearBek,
+            Some(set(&["m"])),
+            None,
+            &["m", "f", "a", "b", "c"],
+            true,
+        ),
+        (
+            "normal alone",
+            Options::DEFAULT,
+            None,
+            None,
+            &["m", "x", "a", "f", "b", "c"],
+            true,
+        ),
+        (
+            "bek alone",
+            bek,
+            None,
+            None,
+            &["m", "f", "x", "a", "b", "c"],
+            true,
+        ),
+        (
+            "linear bek alone",
+            Options::LinearBek,
+            None,
+            None,
+            &["m", "f", "x", "a", "b", "c"],
+            true,
+        ),
+    ];
+    for (name, options, heads, matched, expected, collapse) in table {
+        let mut visible = graph.create_visible_graph(options, heads.as_ref(), matched.as_ref());
+        assert_eq!(visible_rows(&visible), expected, "{name}");
+        let controller = visible.action_controller();
+        for kind in [
+            GraphActionType::ButtonCollapse,
+            GraphActionType::ButtonExpand,
+        ] {
+            assert_eq!(
+                controller.is_action_supported(&GraphAction::new(None, kind)),
+                collapse,
+                "{name} {kind:?}"
+            );
+        }
+    }
+}

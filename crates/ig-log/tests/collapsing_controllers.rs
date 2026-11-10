@@ -195,6 +195,7 @@ fn visible_branches_hide_the_other_branches() {
     // unknown and not-loaded heads are skipped
     let skipped = visible_with_heads(&info, &[-2, 5]);
     assert_eq!(graph_string(&skipped), "5(6)\n6(7)\n7()\n");
+    // no-panic check: the hover's answer is not asserted
     act_node(&mut visible, 0, GraphActionType::MouseOver);
 }
 
@@ -269,4 +270,129 @@ fn stale_elements_out_of_range_act_as_no_element() {
         assert!(answer.graph_updater.is_none());
     }
     assert!(matches!(stale.graph_element(), GraphElement::Node(_)));
+}
+
+/// IdeaGit: an edge element whose node indexes are out of range acts as no element too (the node
+/// case is covered above).
+#[test]
+fn stale_edge_elements_out_of_range_act_as_no_element() {
+    use ig_log::print_element::PrintElement as _;
+    let info = info(&[0]);
+    let big = collapsed(&info);
+    // the edge 1 -> 5 of the big graph, whose rows do not exist in the small one
+    let stale = (0..big.visible_commit_count())
+        .flat_map(|row| big.get_row_info(row).print_elements())
+        .find(|e| matches!(e, GraphPrintElement::Edge(_)) && e.row_index() >= 5)
+        .expect("an edge printed at a high row");
+    let mut small = visible(&info, |info| {
+        Box::new(CollapsedController::new(
+            Box::new(BaseController::new(info.clone())),
+            info,
+            Some(&HashSet::from([6])),
+        ))
+    });
+    assert_eq!(small.visible_commit_count(), 2);
+    for kind in [GraphActionType::MouseOver, GraphActionType::MouseClick] {
+        let answer = act(&mut small, Some(stale.clone()), kind);
+        assert_eq!(answer.cursor_to_set, Some(Cursor::Default));
+        assert!(answer.graph_updater.is_none());
+    }
+    assert!(matches!(stale.graph_element(), GraphElement::Edge(_)));
+}
+
+mod branch_filter_over_linear_bek {
+    use ig_log::api::EdgeFilter;
+    use ig_log::api::elements::GraphEdgeType;
+    use ig_log::facade::permanent_graph_impl::PermanentGraphImpl;
+    use ig_log::graph_commit::GraphCommitImpl;
+    use ig_log::permanent_graph::{Options, PermanentGraph};
+    use ig_log::print::graph_color_getter::GraphColorGetterByNodeFactory;
+
+    use super::*;
+
+    fn rows(visible: &VisibleGraphImpl<String>) -> Vec<String> {
+        (0..visible.visible_commit_count())
+            .map(|row| visible.get_row_info(row).commit())
+            .collect()
+    }
+
+    fn dotted_edges(visible: &VisibleGraphImpl<String>) -> usize {
+        let graph = visible.linear_graph();
+        (0..graph.nodes_count())
+            .flat_map(|row| graph.get_adjacent_edges(row, EdgeFilter::NormalDown))
+            .filter(|edge| edge.edge_type == GraphEdgeType::Dotted)
+            .count()
+    }
+
+    fn click(visible: &mut VisibleGraphImpl<String>, commit: &str) {
+        let row = visible.get_visible_row_index(&commit.to_string()).unwrap();
+        let element = visible
+            .get_row_info(row)
+            .print_elements()
+            .into_iter()
+            .find(|e| matches!(e, GraphPrintElement::Node(_)))
+            .unwrap();
+        let answer = visible
+            .action_controller()
+            .perform_action(GraphAction::new(Some(element), GraphActionType::MouseClick));
+        if let Some(updater) = answer.graph_updater {
+            visible.run_graph_updater(updater);
+        }
+    }
+
+    /// IdeaGit: `BranchFilterController` converts the element of its compiled graph to the linear
+    /// BEK delegate, and rebuilds its graph when the delegate changed (`delegate_graph_changed`).
+    #[test]
+    fn a_click_collapses_and_expands_a_linear_bek_fragment_through_the_branch_filter() {
+        // the example of `LinearBekTest.simpleGraphTest`, plus the branch `z` that is filtered out
+        let text = "
+            z|-c7
+            c0|-c4 c1
+            c1|-c2
+            c2|-c3
+            c3|-c7
+            c4|-c5
+            c5|-c6
+            c6|-c7
+            c7|-
+        ";
+        let count = text.lines().filter(|l| !l.trim().is_empty()).count() as i64;
+        let commits: Vec<_> = text
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .enumerate()
+            .map(|(i, line)| {
+                let (id, parents) = line.split_once("|-").unwrap();
+                let parents = parents.split_whitespace().map(str::to_string).collect();
+                GraphCommitImpl::create_commit(id.to_string(), parents, count - i as i64)
+            })
+            .collect();
+        let factory = GraphColorGetterByNodeFactory::new(|_: &String, layout_index| layout_index);
+        let branches: HashSet<String> = ["z", "c0"].iter().map(|s| s.to_string()).collect();
+        let graph = PermanentGraphImpl::new_instance(
+            &commits,
+            &factory,
+            |a: &String, b: &String| a.cmp(b),
+            &branches,
+        );
+        let heads: HashSet<String> = HashSet::from(["c0".to_string()]);
+        let mut visible = graph.create_visible_graph(Options::LinearBek, Some(&heads), None);
+
+        let collapsed_rows = rows(&visible);
+        assert!(!collapsed_rows.contains(&"z".to_string()));
+        assert_eq!(collapsed_rows.len(), 8);
+        assert_eq!(dotted_edges(&visible), 1);
+
+        // c3 is the upper end of the dotted edge: a click expands the merge
+        click(&mut visible, "c3");
+        assert_eq!(dotted_edges(&visible), 0);
+        assert_eq!(rows(&visible).len(), 8);
+        assert!(!rows(&visible).contains(&"z".to_string()));
+
+        // a click on a commit of the expanded merge collapses it again, restoring the rows
+        click(&mut visible, "c2");
+        assert_eq!(dotted_edges(&visible), 1);
+        assert_eq!(rows(&visible), collapsed_rows);
+    }
 }
