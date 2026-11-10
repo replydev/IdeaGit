@@ -7,9 +7,13 @@
 //! here the selection *is* the set of commits, so rows are recomputed from the new graph, and
 //! commits no longer shown are dropped ([`Selection::retain_visible`]).
 //!
-//! An anchor whose commit is no longer shown is replaced by the clicked commit (`JTable` keeps
-//! row indices, which point at other commits after a refresh). Without any anchor, Shift+click
-//! extends from row 0, like `JTable.changeSelection` with no anchor (`-1` becomes row 0).
+//! After the rows change, a lead or anchor no longer shown moves to a selected commit, or to none
+//! (as `fireTableDataChanged` + `SelectionSnapshot.restore` leave them). Deviations: upstream
+//! moves them even when still shown, to the last row `restore` re-adds (in hash-set order); here a
+//! shown lead and anchor stay, and the replacement is the top-most selected commit. An anchor
+//! that is somehow not shown at a Shift+click is replaced by the clicked commit. Without any
+//! anchor, Shift+click extends from row 0, like `JTable.changeSelection` with no anchor (`-1`
+//! becomes row 0).
 
 use std::collections::BTreeSet;
 
@@ -44,6 +48,16 @@ impl Selection {
 
     pub fn is_empty(&self) -> bool {
         self.commits.is_empty()
+    }
+
+    /// The lead commit (`ListSelectionModel.getLeadSelectionIndex`).
+    pub fn lead(&self) -> Option<Commit> {
+        self.lead
+    }
+
+    /// The anchor commit (`ListSelectionModel.getAnchorSelectionIndex`).
+    pub fn anchor(&self) -> Option<Commit> {
+        self.anchor
     }
 
     /// The lead row (where keyboard navigation continues), if its commit is still shown.
@@ -140,9 +154,19 @@ impl Selection {
         self.commits = (0..rows.count()).map(|r| rows.commit(r)).collect();
     }
 
-    /// Drops the commits that `rows` no longer shows (after a new snapshot).
+    /// Drops the commits that `rows` no longer shows (after the rows changed). A lead or anchor no
+    /// longer shown moves, with the other, to the top-most selected commit, or to none if no
+    /// commit is left: upstream `fireTableDataChanged` clears the lead and anchor, then
+    /// `SelectionSnapshot.restore` re-adds each selected row with `addRowSelectionInterval`, which
+    /// makes it the lead and anchor.
     pub fn retain_visible(&mut self, rows: &dyn Rows) {
         self.commits.retain(|&c| rows.row(c).is_some());
+        let shown = |commit: Option<Commit>| commit.is_none_or(|c| rows.row(c).is_some());
+        if !shown(self.lead) || !shown(self.anchor) {
+            let top = self.commits.iter().copied().min_by_key(|&c| rows.row(c));
+            self.lead = top;
+            self.anchor = top;
+        }
     }
 
     /// Selects only `row` (a jump); ignored if out of range.
@@ -220,14 +244,40 @@ mod tests {
     fn invisible_anchor_is_replaced_by_the_clicked_commit() {
         let mut s = Selection::default();
         s.click(8, false, false, &Linear(10)); // anchor: commit 108
-        // after a refresh only 5 rows are shown: Shift+click extends from the clicked row
+        // only 5 rows are shown, and the selection was not refreshed: Shift+click extends from
+        // the clicked row
         let rows = Linear(5);
-        s.retain_visible(&rows);
-        assert!(s.is_empty());
         s.click(2, false, true, &rows);
         assert_eq!(rows_of(&s), [2]);
         s.click(4, false, true, &rows);
         assert_eq!(rows_of(&s), [2, 3, 4]);
+    }
+
+    #[test]
+    fn retain_visible_moves_a_hidden_lead_and_anchor() {
+        // nothing left: no lead or anchor, so Shift+click extends from row 0
+        let mut s = Selection::default();
+        s.click(8, false, false, &Linear(10));
+        let rows = Linear(5);
+        s.retain_visible(&rows);
+        assert!(s.is_empty());
+        assert_eq!((s.lead(), s.anchor()), (None, None));
+        s.click(2, false, true, &rows);
+        assert_eq!(rows_of(&s), [0, 1, 2]);
+        // the lead and anchor move to the top-most selected commit
+        let mut s = Selection::default();
+        s.click(3, false, false, &Linear(10));
+        s.click(1, true, false, &Linear(10));
+        s.click(8, true, false, &Linear(10));
+        s.retain_visible(&Linear(5));
+        assert_eq!(rows_of(&s), [1, 3]);
+        assert_eq!((s.lead(), s.anchor()), (Some(101), Some(101)));
+        // a shown lead and anchor stay
+        let mut s = Selection::default();
+        s.click(1, false, false, &Linear(10));
+        s.click(3, false, true, &Linear(10));
+        s.retain_visible(&Linear(5));
+        assert_eq!((s.lead(), s.anchor()), (Some(103), Some(101)));
     }
 
     #[test]

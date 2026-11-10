@@ -426,6 +426,49 @@ fn a_click_that_collapses_a_fragment_resets_the_hand_cursor(cx: &mut TestAppCont
 }
 
 #[gpui::test]
+fn collapsing_the_selected_commit_deselects_it(cx: &mut TestAppContext) {
+    let dir = repo_with_a_merge();
+    let model = merge_log(cx, dir.path());
+    let geometry = ig_app::log::graph_painter::GraphGeometry::new(26.0, 2.0);
+    model.update(cx, |m, _| {
+        // only f1 selected (lead and anchor): hiding it leaves no selection, lead or anchor
+        // (`fireTableDataChanged` clears them, `SelectionSnapshot.restore` adds no row back)
+        let (row, x, y) = node_of(m, &geometry, "f1");
+        m.click_row(row, false, false);
+        assert!(m.click_graph(row, x, y, &geometry));
+        assert_eq!(m.row_count(), 7);
+        assert!(m.selection.is_empty());
+        assert_eq!(m.selection.lead(), None);
+        assert_eq!(m.selection.anchor(), None);
+        // so Shift+click extends from row 0, like `JTable` with no anchor
+        let c2 = row_of(m, "c2");
+        m.click_row(c2, false, true);
+        assert_eq!(m.selection.len(), c2 + 1);
+    });
+
+    let dir = repo_with_a_merge();
+    let model = merge_log(cx, dir.path());
+    model.update(cx, |m, _| {
+        // c3 and f1 selected, f1 the lead and anchor: they move to the restored row (c3)
+        let c3 = row_of(m, "c3");
+        m.click_row(c3, false, false);
+        let (row, x, y) = node_of(m, &geometry, "f1");
+        let (f1, _) = m.row(row).unwrap();
+        m.click_row(row, true, false);
+        assert_eq!(m.selection.lead(), Some(f1));
+        assert!(m.click_graph(row, x, y, &geometry));
+        let c3_row = row_of(m, "c3");
+        let (c3, _) = m.row(c3_row).unwrap();
+        assert_eq!(
+            m.selection.commits().iter().copied().collect::<Vec<_>>(),
+            [c3]
+        );
+        assert_eq!(m.selection.lead(), Some(c3));
+        assert_eq!(m.selection.anchor(), Some(c3));
+    });
+}
+
+#[gpui::test]
 fn a_second_click_expands_the_fragment(cx: &mut TestAppContext) {
     let dir = repo_with_a_merge();
     let model = merge_log(cx, dir.path());

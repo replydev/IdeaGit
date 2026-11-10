@@ -1208,10 +1208,11 @@ deviations = [
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"
 upstream = [
   "platform/vcs-log/impl/src/com/intellij/vcs/log/ui/table/VcsLogGraphTable.java",
+  "platform/vcs-log/impl/src/com/intellij/vcs/log/ui/table/SelectionSnapshot.kt",
 ]
 deviations = [
   "Selection is kept as a set of commits, not rows restored after refresh",
-  "An anchor no longer shown is replaced by the clicked commit (JTable keeps the row index); commits no longer shown are dropped after each snapshot",
+  "Commits no longer shown are dropped after the rows change (a snapshot or a graph click); a lead or anchor no longer shown moves with the other to the top-most selected commit, or none (upstream fireTableDataChanged + SelectionSnapshot.restore move both to the last re-added row, in hash-set order, even when still shown); an anchor not shown at a Shift+click is replaced by the clicked commit",
 ]
 
 [modules."ig-app::log::view"]
