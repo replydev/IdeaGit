@@ -6,6 +6,13 @@
 //! highlights the edge, or the linear fragment of a node, and sets the hand cursor); clicking an
 //! arrow jumps to the commit it points to (select + scroll), clicking a node or edge collapses or
 //! expands its fragment. Print elements are snapshots, so rows are re-read on every repaint.
+//!
+//! After a click the rows are refreshed like `handleGraphAnswer` with `dataCouldChange`
+//! (`fireTableDataChanged` + `SelectionSnapshot.restore`): a new generation, the selection kept
+//! by commit (see [`Selection::retain_visible`]). Deviation: the hover is cleared and the cursor
+//! reset to the default one; upstream keeps the click's cursor until the next mouse move performs
+//! `MOUSE_OVER`, which this model de-duplicates (it only acts when the hovered element changes),
+//! so a kept hand cursor would stick until another element is hovered.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -176,9 +183,7 @@ impl LogModel {
                     snapshot.data.is_full(),
                     self.started.elapsed()
                 );
-                self.generation += 1;
-                self.hovered_element = None;
-                self.hand_cursor = false;
+                self.drop_hover();
                 self.snapshot = Some(*snapshot);
                 if let Some(visible) = self.snapshot.as_ref().and_then(|s| s.visible.as_ref()) {
                     self.selection.retain_visible(&SnapshotRows(visible));
@@ -369,10 +374,18 @@ impl LogModel {
             // `GraphCommitCellController.handleGraphAnswer` with `dataCouldChange`: a click may
             // have collapsed or expanded the graph, so rows may have moved; the selection is kept
             // by commit, minus the commits no longer shown
-            self.generation += 1;
-            self.hovered_element = None;
+            self.drop_hover();
             self.with_rows(|s, rows| s.retain_visible(rows));
         }
+    }
+
+    /// The rows changed: starts a new generation and drops the hover with its hand cursor. The
+    /// pointer may now be over another element, or none; the next move hovers it afresh (upstream
+    /// performs `MOUSE_OVER` on every move, so a stale hover never outlives the next move).
+    fn drop_hover(&mut self) {
+        self.generation += 1;
+        self.hovered_element = None;
+        self.hand_cursor = false;
     }
 
     /// Runs an action and handles the answer (`GraphCommitCellController.handleGraphAnswer`).
@@ -384,8 +397,7 @@ impl LogModel {
         if let Some(updater) = answer.graph_updater {
             visible.run_graph_updater(updater);
             // rows may have moved: handlers painted for the old rows must not act on new ones
-            self.generation += 1;
-            self.hovered_element = None;
+            self.drop_hover();
         }
         if let Some(cursor) = answer.cursor_to_set {
             self.hand_cursor = cursor == Cursor::Hand;

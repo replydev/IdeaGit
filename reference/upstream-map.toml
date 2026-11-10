@@ -1199,6 +1199,10 @@ upstream = [
   "platform/vcs-log/impl/src/com/intellij/vcs/log/ui/table/VcsLogGraphTable.java",
   "platform/vcs-log/impl/src/com/intellij/vcs/log/ui/table/GraphTableModel.kt",
 ]
+deviations = [
+  "After a click the Log refreshes rows like handleGraphAnswer (dataCouldChange): a new generation, the hover cleared, the cursor reset to the default one (upstream keeps the click's cursor until the next mouse move; hover here only acts when the hovered element changes), the selection kept by commit",
+  "Clicks on a node or edge collapse/expand its fragment as in IntelliJ; clicks on an arrow jump to its target",
+]
 
 [modules."ig-app::log::selection"]
 pinned = "b3c1c1958bc81cc96ea882fd4beba72849c1ed98"

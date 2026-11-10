@@ -329,9 +329,10 @@ fn hovering_a_node_highlights_its_fragment(cx: &mut TestAppContext) {
             } | Shape::Line { color: MARK, .. }
         )));
 
-        // leaving the graph clears the highlight
+        // leaving the graph clears the highlight and the hand cursor
         assert!(m.unhover_graph());
         assert!(selected_nodes(m).is_empty());
+        assert!(!m.hand_cursor);
     });
 }
 
@@ -368,6 +369,85 @@ fn clicking_a_node_collapses_its_fragment(cx: &mut TestAppContext) {
         let row = row_of(m, "c3");
         let (c3_commit, _) = m.row(row).unwrap();
         assert!(m.is_selected(c3_commit));
+    });
+}
+
+/// The Log of [`repo_with_a_merge`] with every row's metadata loaded.
+fn merge_log(cx: &mut TestAppContext, dir: &Path) -> Entity<LogModel> {
+    let model = log_model(cx, dir);
+    model.update(cx, |m, _| m.request_metadata(0..m.row_count()));
+    wait(cx, &model, |m| {
+        m.metadata_loaded_for(m.row_count()) && !m.is_busy()
+    });
+    model
+}
+
+/// The row of the commit `subject_of_row` and the center of its node.
+fn node_of(
+    m: &mut LogModel,
+    geometry: &ig_app::log::graph_painter::GraphGeometry,
+    subject_of_row: &str,
+) -> (usize, f32, f32) {
+    use ig_log::print_element::PrintElement;
+    let row = row_of(m, subject_of_row);
+    let node = m
+        .row(row)
+        .unwrap()
+        .1
+        .into_iter()
+        .find(|e| matches!(e, GraphPrintElement::Node(_)))
+        .unwrap();
+    let (x, y) = geometry.node_center(node.position_in_current_row());
+    (row, x, y)
+}
+
+#[gpui::test]
+fn a_click_that_collapses_a_fragment_resets_the_hand_cursor(cx: &mut TestAppContext) {
+    let dir = repo_with_a_merge();
+    let model = merge_log(cx, dir.path());
+    let geometry = ig_app::log::graph_painter::GraphGeometry::new(26.0, 2.0);
+    model.update(cx, |m, _| {
+        let (row, x, y) = node_of(m, &geometry, "f1");
+        assert!(m.hover_graph(row, x, y, &geometry));
+        assert!(m.hand_cursor);
+        assert!(m.click_graph(row, x, y, &geometry));
+        assert_eq!(m.row_count(), 7);
+        // the collapse answer sets no cursor: the hover is gone, and so is its hand cursor
+        assert!(!m.hand_cursor);
+        assert!(selected_nodes(m).is_empty());
+        // moving over empty graph space keeps the default cursor
+        m.hover_graph(0, 1000.0, 1.0, &geometry);
+        assert!(!m.hand_cursor);
+        // hovering a node again shows the hand
+        let (row, x, y) = node_of(m, &geometry, "c3");
+        assert!(m.hover_graph(row, x, y, &geometry));
+        assert!(m.hand_cursor);
+    });
+}
+
+#[gpui::test]
+fn a_second_click_expands_the_fragment(cx: &mut TestAppContext) {
+    let dir = repo_with_a_merge();
+    let model = merge_log(cx, dir.path());
+    let geometry = ig_app::log::graph_painter::GraphGeometry::new(26.0, 2.0);
+    model.update(cx, |m, _| {
+        let subjects = |m: &mut LogModel| {
+            (0..m.row_count())
+                .map(|r| subject(m, r))
+                .collect::<Vec<_>>()
+        };
+        let expanded = subjects(m);
+        let (row, x, y) = node_of(m, &geometry, "f1");
+        assert!(m.click_graph(row, x, y, &geometry));
+        assert_eq!(m.row_count(), 7);
+        assert!(!subjects(m).contains(&"f1".to_string()));
+        // f2 ends the dotted edge that stands for f1: clicking it shows f1 again
+        let generation = m.generation;
+        let (row, x, y) = node_of(m, &geometry, "f2");
+        assert!(m.click_graph(row, x, y, &geometry));
+        assert_eq!(subjects(m), expanded);
+        assert!(m.generation > generation);
+        assert!(!m.hand_cursor);
     });
 }
 
