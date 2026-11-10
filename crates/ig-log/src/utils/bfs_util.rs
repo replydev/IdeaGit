@@ -186,6 +186,11 @@ impl<'g, G: LiteLinearGraph + ?Sized, Q: BfsQueue> BfsSearch<'g, G, Q> {
         }
     }
 
+    /// Walks until `consumer` returns a value, the walk is finished or `limit` is exceeded.
+    ///
+    /// Deviation: upstream (`BfsUtil.kt`) keeps `result` in a field and `isFinished()` is true once
+    /// it is found, so a second `find()` returns the old result. Here `result` is local, so a second
+    /// `find()` resumes the walk. The only caller builds a fresh search each time.
     pub fn find<T>(
         &mut self,
         visited: &mut dyn Flags,

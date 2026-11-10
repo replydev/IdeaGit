@@ -154,6 +154,8 @@ impl<Q: BfsQueue> Flags for Visited1<'_, Q> {
 }
 
 /// Nodes reachable from `node1` but not from `node2`.
+///
+/// The set has no defined iteration order: callers must not depend on it (sort if needed).
 pub fn subgraph_difference(
     graph: &(impl LinearGraph + ?Sized),
     node1: i32,
@@ -187,6 +189,8 @@ pub fn subgraph_difference(
 }
 
 /// Nodes reachable only from `head_node` and not from other heads (`isHead`), on a lite graph.
+///
+/// The set has no defined iteration order: callers must not depend on it (sort if needed).
 pub fn lite_exclusive_nodes(
     graph: &(impl LiteLinearGraph + ?Sized),
     head_node: i32,
@@ -209,6 +213,8 @@ pub fn lite_exclusive_nodes(
 }
 
 /// Nodes reachable only from `head_node` and not from other heads (`isHead`).
+///
+/// The set has no defined iteration order: callers must not depend on it (sort if needed).
 pub fn exclusive_nodes(
     graph: &(impl LinearGraph + ?Sized),
     head_node: i32,

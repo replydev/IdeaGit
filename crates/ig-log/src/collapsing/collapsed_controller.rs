@@ -5,7 +5,9 @@
 //! Upstream quirk kept: `convert_to_delegate` checks whether an edge is "my collapsed edge" with
 //! the edge's compiled node indexes, while the edge storage is keyed by delegate node indexes.
 //! Delegate actions on edges do nothing in every chain that has this controller, so it does not
-//! matter.
+//! matter. `BranchFilterController::convert_to_delegate` reuses the same function over linear BEK,
+//! which does act on edges; there the quirk is harmless because a `BranchFilterController` never
+//! adds edges, so its edge storage is empty and `is_my_collapsed_edge` is always false.
 
 use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;

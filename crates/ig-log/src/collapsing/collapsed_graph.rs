@@ -8,14 +8,22 @@
 //!   [`CollapsedGraph`], its compiled graph and its [`Modification`]s, so a modification can be
 //!   applied later by a `Send + 'static` graph updater, in place.
 //! - `assertNotUnderModification` is replaced by the lock: [`Modification::apply`] holds the write
-//!   lock, so the compiled graph is never read half-modified.
+//!   lock, so a single guarded read never sees a half-modified state. The guarantee is per guard:
+//!   `get_adjacent_edges` reads the delegate edges and the added edges under separate guards, so
+//!   an `apply` on another thread could interleave between them (as upstream). Graph updaters run
+//!   on the caller's thread, so this does not happen today.
 //! - Only one modification may be running at a time, as upstream; a [`Modification`] dropped
 //!   without [`apply`](Modification::apply) (e.g. a graph updater that is never run) ends the
 //!   modification, where upstream would refuse every later one.
 //! - `updateInstance` copies the visibility (upstream shares it with the old graph, which is
 //!   dropped).
 //! - The compiled graph's edge storage wrapper resolves indexes through the shared state, taking
-//!   the read lock per call, so no lock is held while another is taken.
+//!   the read lock per call.
+//! - Lock order: locks are always taken in the order outer graph (this state) -> inner (delegate)
+//!   graph -> edge storage, never the reverse (e.g. `get_graph_node`, `compiled_node_id`,
+//!   `compiled_index_of_id` and `apply` call the delegate graph while holding this guard, and
+//!   `apply` takes the edge-storage lock under the state lock), so the nesting cannot deadlock.
+//!   Keep that order when changing this code.
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -72,7 +80,9 @@ impl CollapsedState {
 type SharedState = Arc<RwLock<CollapsedState>>;
 
 fn read(state: &SharedState) -> RwLockReadGuard<'_, CollapsedState> {
-    // the state is only replaced field by field under the lock; a poisoned guard is still usable
+    // A poisoned lock is recovered and used anyway. A panic in the middle of `apply` could leave the
+    // visibility and the index map out of sync (upstream would refuse later reads); this is
+    // accepted because such a panic is not reachable.
     state.read().unwrap_or_else(PoisonError::into_inner)
 }
 
