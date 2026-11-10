@@ -1,4 +1,4 @@
-# IdeaGit — Checkpoint for the next agent (2026-11-10, after Plan 3 and the first manual-testing fixes)
+# IdeaGit — Checkpoint for the next agent (2026-11-10, Plan 2b planned and simulated, ready to execute)
 
 Read this first. It records where the project is, how the work has been done, and what comes next.
 
@@ -11,10 +11,12 @@ A cross-platform desktop Git client in **Rust + GPUI**. It reproduces IntelliJ I
 - **Technical debt:** `docs/tech-debt.md`
 - **README:** `README.md` (build, run, crates)
 - **Manual checklist:** `docs/app-shell-checklist.md`
+- **Plan 2b spec:** `docs/superpowers/specs/2026-11-10-plan-2b-graph-extras-design.md`
+- **Plan 2b plan:** `docs/superpowers/plans/2026-11-10-plan-2b-graph-extras.md`
 
 ## Repository state
 
-- **`master`** on `origin` = https://github.com/replydev/IdeaGit. CI is green on Linux, macOS, Windows and the MSRV (1.95) job, including the GPUI build.
+- **`master`** on `origin` = https://github.com/replydev/IdeaGit. CI is green on Linux, macOS, Windows and the MSRV (1.95) job, including the GPUI build (last checked at `c816733`; the later commits are docs only). `master` is at `23a98c4` and matches `origin`.
 - **Crates:**
   - `ig-git`: git CLI runner and console events; status, refs, config remotes, repository reader, root detection; `log` (parser, collector, `GitLogProvider`, `GitRefManager`).
   - `ig-log`: the IntelliJ commit graph (permanent graph, layout, print elements, facade) and `data` (storage, refs model, sorter, joiners, graph data, synchronous `VcsLogRefresher`).
@@ -29,6 +31,7 @@ A cross-platform desktop Git client in **Rust + GPUI**. It reproduces IntelliJ I
 - **Tests:** 514 pass, plus 1 ignored perf test. They cover ported upstream tests (byte-identical fixtures), IdeaGit tests, and headless GPUI UI tests (`crates/ig-app/tests/ui.rs`, `TestAppContext`).
 - **Reference map:** `reference/UPSTREAM` pins `intellij-community` branch `263` at commit `b3c1c1958bc81cc96ea882fd4beba72849c1ed98`. `reference/upstream-map.toml` maps every Rust module to its upstream files, tests and deviations. `#member` anchors and directory entries are intentional.
 - **Plan generators:** `docs/superpowers/plangen/gen*.py`. `gen4.py` (Plan 3) holds the tasks as data. The same script renders the plan and applies a task to a scratch clone, which makes the simulation step exact.
+  - `gen5.py` (Plan 2b) is simpler. Each task is one prototype commit, copied at that commit (tests first, then code). `sim5.sh` replays the tasks on a fresh clone and writes `sim5.json`: each task's red-step error and test counts.
 
 ## Plans
 
@@ -38,8 +41,8 @@ A cross-platform desktop Git client in **Rust + GPUI**. It reproduces IntelliJ I
 | 2 — commit graph core (`ig-log`) | Done, merged |
 | 2c — git log data layer (`ig-log::data`, `ig-git::log`) | Done, merged |
 | 3 — app shell and read-only Log (`ig-ui-kit`, `ig-app`, `xtask`) | Done, merged (PR #1) |
-| 2b — graph extras (BEK, linear BEK, filters, collapsing, first-parent, fragment hover) | Not started |
-| Log UI (details pane, changes tree, filters, context actions) | Not started |
+| 2b — graph extras (BEK, linear BEK, filters, collapsing, first-parent, fragment hover) | **Spec approved, prototype verified, plan generated and simulated. Ready to execute.** |
+| Log UI, read-only (details pane, changes tree, `VcsLogFilterer` filters, View Options popup, non-modifying context actions) | Not started; comes after 2b. Repository-changing actions (checkout, new branch/tag, cherry-pick, revert, reset) moved to the Branches/operations plan; double-click diff waits for `ig-diff`. |
 | Diff comparison (`ig-diff`, port of `com.intellij.diff.comparison` with upstream tests) | Not started |
 | Change model + commit backend (changelists, line-status tracking, partial commit via temp index) | Not started |
 | Commit tool window, diff viewer, basic editor | Not started |
@@ -62,6 +65,7 @@ Plan files are in `docs/superpowers/plans/`. Each one has "Not in this plan" / "
 - **Manual testing has started.** The user runs the app on real repositories and reports bugs. Fixed so far:
   - **Dark Log hover was near-white.** The hover color is mixed into the row background, as `VcsLogGraphTable.getHoveredBackgroundColor` does.
   - **A hidden dock left a header strip.** Hiding now removes the dock entirely.
+  - **The Log was one row tall on Windows and Linux** (found by CI after `a2102b7`). gpui-component's `AppMenuBar` is `size_full` and took the whole column height. It now sits in a `flex_none` wrapper at its preferred height, as upstream's `IdeRootPane` lays it out (`c816733`).
   - **Linked worktrees were loaded as extra roots.** Worktrees under `.claude/worktrees` made the Log load the whole history once per worktree, so it was slow and every commit was duplicated. Root detection now skips dot-directories and `vendor`, as upstream's `vcs.root.detector.ignore.pattern` does.
 - **Still not checked by eye:**
   - the welcome window
@@ -122,17 +126,41 @@ Lessons from Plan 3:
 
 - **Upstream reference clone:** `~/Code/intellij-community`, a sparse, blob-less clone of branch `263` at `b3c1c19`. Read any file with `git show HEAD:<path>`.
 - **Rust toolchains:** the default is 1.96. CI needs 1.95 (the MSRV). Extra toolchains (1.85, 1.93, 1.94, 1.97–1.99) can be removed with `rustup toolchain uninstall`.
-- **Disposable:** `/tmp/ig-proto*`, `/tmp/ig-tasks*`, `/tmp/lec-shots`, and the `wip/app-shell-prototype` and `feat/app-shell` branches (both merged). Delete them once you no longer want to compare against them.
+- **Plan 2b prototype — keep until Plan 2b is merged:**
+  - The local branch `wip/graph-extras-prototype` in this repository (not pushed). Its 8 commits are the plan's 8 tasks, and every `git checkout <commit> -- <paths>` in the plan needs them.
+  - The scratch clone `/tmp/ig-proto-2b` holds the same branch.
+  - The simulation clone `/tmp/ig-sim-2b` has one commit per task, the tree you should get after each task. It is useful for the spec-compliance diff.
+- **Disposable:**
+  - `/tmp/ig-proto` and `/tmp/ig-proto[0-9]*` (not `/tmp/ig-proto-2b`), `/tmp/ig-tasks*`, `/tmp/lec-shots`, `/tmp/ig-menubar-shots`.
+  - The `*-target` build directories.
+  - The `wip/app-shell-prototype` and `feat/app-shell` branches (both merged).
+
+  Delete them once you no longer want to compare against them.
 - **Quick visual check without a display:** `cargo xtask screenshots --repo <repo> --out <dir>` renders the window as it opens and prints when the Log was ready. It only works on macOS. Read the PNGs to check the layout.
 
 ## Next steps
 
-1. Keep fixing what the user finds while testing by hand, and finish `docs/app-shell-checklist.md`. For each bug:
+1. **Execute Plan 2b** (`docs/superpowers/plans/2026-11-10-plan-2b-graph-extras.md`) subagent-driven, as in "How the work is done" step 5:
+   - **Branch:** create `feat/graph-extras` from `master` (`23a98c4`).
+   - **Implementer:** a haiku implementer per task, which follows the task's steps exactly and reports BLOCKED instead of editing code. Each task copies from its own prototype commit, runs the tests red (compile error) and then green, checks the copy is exact, runs the full checks, and commits.
+   - **Expected counts:** 566, 570, 610, 621, 645, 650, 652 and 652 passing tests after tasks 1–8, with 1, 1, 2, 2, 2, 3, 3 and 3 ignored.
+   - **Spec compliance:** after each task, the commit's tree must equal both the prototype commit named in the task and the matching `/tmp/ig-sim-2b` commit: `git diff <task commit> <sim commit>` must be empty.
+   - **Quality review:**
+     - sonnet for task 1 (utilities), task 2 (BEK sort) and task 8 (map);
+     - opus for task 3 (collapsed graph: lock re-entrancy), task 4 (controllers, default-method downcasts, stale-element guard), task 5 (linear BEK, Java `PriorityQueue` fidelity), task 6 (controller chain against `PermanentGraphImpl.createFilteredController`, the `OnceLock` BEK map, the empty-repository fix) and task 7 (app click/refresh).
+     - Point reviewers at the upstream sources under `platform/vcs-log/graph`.
+   - **Fixes:** fixes go in separate worktrees and are cherry-picked. Keep APIs source-compatible with files later tasks copy verbatim. If a fix changes a later task's copied file, record the difference and update the expected tree for that task.
+   - **Finish:** a draft PR for CI, a final opus review of the whole branch, then a fast-forward merge to `master`, push and watch CI. Afterwards, mark Plan 2b done here, add its notes for the Log UI plan, and delete `wip/graph-extras-prototype`, `/tmp/ig-proto-2b` and `/tmp/ig-sim-2b`.
+2. **Decisions to look at closely in review** (from the prototype; all recorded in the plan's Deviations section):
+   - **Clicks now collapse.** A click on a graph node collapses or expands its fragment, as in IntelliJ. The spec was updated to include this; the user had only asked for hover.
+   - **Debug-only assertions.** `SortChecker` and BEK use `debug_assert!`, so a BEK ordering bug panics the worker in debug builds.
+   - **Script-converted test.** The `LinearBekTest` port was converted by script. Its 20 tests' graph data matches upstream digit for digit.
+3. **Keep fixing what the user finds** while testing by hand, and finish `docs/app-shell-checklist.md`. For each bug:
    - use `superpowers:systematic-debugging` and compare against the upstream source
    - write a failing test first
    - record any difference from IntelliJ in `reference/upstream-map.toml`
    - commit as separate logical commits
    - push to `master` only when the user asks
-2. Brainstorm the next plan with the user. The likely candidates are:
-   - the Log UI (details, changes, filters, actions, plus Plan 2b's BEK, filters and collapsing)
-   - the diff/commit path
+4. **After Plan 2b, brainstorm the read-only Log UI plan** with the user:
+   - details, changes tree, `VcsLogFilterer` filters, the View Options popup, and the Log table gaps;
+   - first read the notes in Plans 2c and 3, which include the tag-fetch refresh decision and the forced full reload for watched repo changes.
