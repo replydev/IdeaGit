@@ -42,9 +42,7 @@ fn linear_chain(n: usize) -> Vec<GraphCommitImpl<String>> {
 fn recommended_width_of_linear_history_is_one() {
     for n in [10, 36] {
         let graph = build(&linear_chain(n), &HashSet::new());
-        let visible = graph
-            .create_visible_graph(Options::DEFAULT, None, None)
-            .unwrap();
+        let visible = graph.create_visible_graph(Options::DEFAULT, None, None);
         assert_eq!(visible.recommended_width(), 1, "n = {n}");
     }
 }
@@ -87,9 +85,7 @@ fn long_edge_cut_points_are_terminal_arrows() {
     )];
     commits.extend(linear_chain(80));
     let graph = build(&commits, &HashSet::new());
-    let visible = graph
-        .create_visible_graph(Options::DEFAULT, None, None)
-        .unwrap();
+    let visible = graph.create_visible_graph(Options::DEFAULT, None, None);
     let edges: Vec<_> = (0..visible.visible_commit_count())
         .flat_map(|row| visible.get_row_info(row).print_elements())
         .filter_map(|e| match e {

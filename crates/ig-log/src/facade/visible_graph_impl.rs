@@ -6,11 +6,8 @@
 //! - `VisibleGraphImpl` implements `ActionController` itself (upstream: an inner class).
 //! - The graph updater of an answer is run with [`VisibleGraph::run_graph_updater`], which then
 //!   rebuilds the print element generator (upstream wraps the `Runnable`).
-//! - `BUTTON_COLLAPSE` / `BUTTON_EXPAND` are reported unsupported until `CollapsedController`
-//!   is ported (Plan 2b); upstream supports them on every non-filtered graph.
 //! - An action on a stale print element whose node indexes are out of this graph's range (e.g. a
 //!   hover racing a log refresh) is performed without an affected element; upstream throws.
-//! - `buildSimpleGraphInfo` (`SimpleGraphInfo`) is not ported yet.
 
 use std::collections::HashSet;
 use std::fmt;
@@ -23,6 +20,7 @@ use crate::api::permanent::{PermanentGraphInfo, VcsLogGraphNodeId};
 use crate::api::printer::{GraphColorGetter, GraphPrintElement, PrintElementGenerator};
 use crate::facade::linear_graph_controller::{LinearGraphAnswer, LinearGraphController};
 use crate::facade::print_element_presentation_manager_impl::PrintElementPresentationManagerImpl;
+use crate::facade::simple_graph_info::SimpleGraphInfo;
 use crate::print::graph_element_comparator_by_layout_index::GraphElementComparatorByLayoutIndex;
 use crate::print::print_element_generator_impl::PrintElementGeneratorImpl;
 use crate::print_element::{EdgePrintElement, EdgePrintElementType};
@@ -99,6 +97,26 @@ impl<CommitId: 'static> VisibleGraphImpl<CommitId> {
             &self.color_generator,
             self.is_show_long_edges,
         );
+    }
+
+    /// A standalone copy of the rows around `visible_row` (at most `2 * visible_range` rows).
+    pub fn build_simple_graph_info(
+        &self,
+        visible_row: VcsLogVisibleGraphIndex,
+        visible_range: i32,
+    ) -> SimpleGraphInfo<CommitId>
+    where
+        CommitId: Clone + Eq + std::hash::Hash + Send + Sync,
+    {
+        SimpleGraphInfo::build(
+            &*self.graph_controller.compiled_graph(),
+            self.permanent_graph.permanent_graph_layout(),
+            self.permanent_graph.permanent_commits_info(),
+            self.permanent_graph.linear_graph().nodes_count(),
+            self.permanent_graph.branch_node_ids(),
+            visible_row,
+            visible_range,
+        )
     }
 
     /// The controller's compiled graph (`linearGraph`).
@@ -238,11 +256,14 @@ impl<CommitId: 'static> ActionController<CommitId> for VisibleGraphImpl<CommitId
         self.update_print_element_generator();
     }
 
+    /// Collapse and expand are supported unless the graph is filtered.
     fn is_action_supported(&self, action: &GraphAction) -> bool {
-        !matches!(
-            action.action_type,
-            GraphActionType::ButtonCollapse | GraphActionType::ButtonExpand
-        )
+        match action.action_type {
+            GraphActionType::ButtonCollapse | GraphActionType::ButtonExpand => {
+                self.graph_controller.supports_collapse()
+            }
+            _ => true,
+        }
     }
 }
 

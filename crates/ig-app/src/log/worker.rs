@@ -669,7 +669,7 @@ impl SnapshotThread {
         let generation = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
         let visible = data
             .permanent_graph()
-            .and_then(|g| g.create_visible_graph(Options::DEFAULT, None, None).ok());
+            .map(|g| g.create_visible_graph(Options::DEFAULT, None, None));
         let recommended_width = visible.as_ref().map_or(0, |v| v.recommended_width());
         if let Some(visible) = &visible {
             let first_rows: Vec<_> = (0..visible.visible_commit_count().min(FIRST_ROWS))

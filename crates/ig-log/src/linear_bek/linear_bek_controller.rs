@@ -10,9 +10,8 @@
 //!   a list (upstream: a set of objects without `equals`, i.e. also a list).
 //! - The creation time is not logged.
 //!
-//! Upstream quirk kept: `iterateMerges`' search limit never stops it (see
-//! [`BfsSearch`]), so it walks up to the first merge that
-//! answers.
+//! Upstream quirk kept: `iterateMerges`' search limit never stops it (see [`BfsSearch`]), so it
+//! walks up to the first merge that answers.
 
 use std::collections::{BTreeSet, HashSet, VecDeque};
 use std::sync::Arc;

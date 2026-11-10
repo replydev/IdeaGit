@@ -11,8 +11,9 @@
 //! commits have negative ids. Upstream exceptions are panics; upstream `assert` statements (disabled
 //! in production) are `debug_assert!`s.
 //!
-//! Scope (Plan 2): building the permanent graph and showing it unfiltered with `SortType::Normal`.
-//! BEK sorting, linear BEK, first-parent, branch and text filters and collapsing are Plan 2b.
+//! Scope: the whole graph module. Every option of `PermanentGraph::create_visible_graph` (`Normal`
+//! and BEK sorting, linear BEK, first-parent) with branch and commit filters, collapsing and
+//! fragment hover.
 //!
 //! # Example
 //!
@@ -35,9 +36,7 @@
 //!     |a: &String, b: &String| a.cmp(b),
 //!     &HashSet::new(),
 //! );
-//! let visible = permanent
-//!     .create_visible_graph(Options::DEFAULT, None, None)
-//!     .unwrap();
+//! let visible = permanent.create_visible_graph(Options::DEFAULT, None, None);
 //!
 //! let mut ids = Vec::new();
 //! for row in 0..visible.visible_commit_count() {
@@ -69,7 +68,7 @@ pub use facade::permanent_graph_impl::PermanentGraphImpl;
 pub use facade::visible_graph_impl::VisibleGraphImpl;
 pub use graph_color_manager::GraphColorManager;
 pub use graph_commit::{GraphCommit, GraphCommitImpl};
-pub use permanent_graph::{Options, PermanentGraph, SortType, UnsupportedGraphOptions};
+pub use permanent_graph::{Options, PermanentGraph, SortType};
 pub use print_element::{EdgePrintElement, NodePrintElement, PrintElement};
 pub use visible_graph::{RowInfo, RowType, VisibleGraph};
 

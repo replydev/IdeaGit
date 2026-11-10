@@ -83,9 +83,7 @@ fn colored_graph(text: &str, branches: &[&str]) -> PermanentGraphImpl<String> {
 }
 
 fn visible(graph: &PermanentGraphImpl<String>) -> VisibleGraphImpl<String> {
-    graph
-        .create_visible_graph_sorted(SortType::Normal, None, None)
-        .unwrap()
+    graph.create_visible_graph_sorted(SortType::Normal, None, None)
 }
 
 fn not_full() -> VisibleGraphImpl<String> {
@@ -162,9 +160,7 @@ fn node_and_edge_colors() {
 #[test]
 fn hover_up_arrow_of_long_edge_jumps_to_top_node() {
     let graph = permanent_graph(&long_edge_text(), &[]);
-    let mut visible = graph
-        .create_visible_graph(Options::DEFAULT, None, None)
-        .unwrap();
+    let mut visible = graph.create_visible_graph(Options::DEFAULT, None, None);
     let row = (0..41)
         .find(|&r| {
             visible.get_row_info(r).print_elements().iter().any(|e| {
@@ -239,16 +235,24 @@ fn action_support() {
     let node = node_of(&visible, 0);
     let controller = visible.action_controller();
     let action = |kind| GraphAction::new(Some(node.clone()), kind);
+    assert!(controller.is_action_supported(&action(GraphActionType::ButtonCollapse)));
+    assert!(controller.is_action_supported(&action(GraphActionType::ButtonExpand)));
+    assert!(controller.is_action_supported(&action(GraphActionType::MouseOver)));
+    assert!(controller.is_action_supported(&action(GraphActionType::MouseClick)));
+
+    // a filtered graph (FilteredController) cannot collapse or expand
+    let graph = colored_graph(NOT_FULL_GRAPH, &["a0", "a2"]);
+    let matched: HashSet<String> = ["a0".to_string()].into_iter().collect();
+    let mut filtered = graph.create_visible_graph(Options::DEFAULT, None, Some(&matched));
+    let controller = filtered.action_controller();
     assert!(!controller.is_action_supported(&action(GraphActionType::ButtonCollapse)));
     assert!(!controller.is_action_supported(&action(GraphActionType::ButtonExpand)));
     assert!(controller.is_action_supported(&action(GraphActionType::MouseOver)));
-    assert!(controller.is_action_supported(&action(GraphActionType::MouseClick)));
 }
 
 #[test]
 fn hover_then_refetch_shows_selection_and_old_snapshot_does_not() {
-    // only arrows are selectable on hover: a node hover goes to the BaseController, which
-    // selects nothing
+    // the hovered arrow is selected, and only in the print elements fetched after the hover
     let mut visible = not_full();
     let before = visible.get_row_info(1).print_elements();
     let arrow = arrow_in(&visible, 1, EdgePrintElementType::Down);
@@ -266,18 +270,14 @@ fn hover_then_refetch_shows_selection_and_old_snapshot_does_not() {
 fn stale_arrow_elements_are_ignored() {
     // long-edge arrow from a 41-row graph on a 2-row graph
     let big = permanent_graph(&long_edge_text(), &[]);
-    let mut big = big
-        .create_visible_graph(Options::DEFAULT, None, None)
-        .unwrap();
+    let mut big = big.create_visible_graph(Options::DEFAULT, None, None);
     let long_arrow = arrow_in(&big, 1, EdgePrintElementType::Down);
     let up_arrow = arrow_in(&big, 39, EdgePrintElementType::Up);
     // not-loaded arrow (target -2) from NOT_FULL_GRAPH on a graph without not-loaded commits
     let not_loaded_arrow = arrow_in(&not_full(), 1, EdgePrintElementType::Down);
 
     let small = permanent_graph("x0|-x1\nx1|-\n", &[]);
-    let mut small = small
-        .create_visible_graph(Options::DEFAULT, None, None)
-        .unwrap();
+    let mut small = small.create_visible_graph(Options::DEFAULT, None, None);
     assert_eq!(small.visible_commit_count(), 2);
     for stale in [&long_arrow, &up_arrow, &not_loaded_arrow] {
         for kind in [GraphActionType::MouseOver, GraphActionType::MouseClick] {
@@ -297,9 +297,7 @@ fn stale_arrow_elements_are_ignored() {
 }
 
 fn two_row_graph() -> impl VisibleGraph<String> {
-    permanent_graph("x0|-x1\nx1|-\n", &[])
-        .create_visible_graph(Options::DEFAULT, None, None)
-        .unwrap()
+    permanent_graph("x0|-x1\nx1|-\n", &[]).create_visible_graph(Options::DEFAULT, None, None)
 }
 
 #[test]

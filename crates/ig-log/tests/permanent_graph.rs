@@ -1,4 +1,4 @@
-//! IdeaGit tests for the facade (`PermanentGraphImpl`, `VisibleGraphImpl`) with `SortType::Normal`.
+//! IdeaGit tests for the facade (`PermanentGraphImpl`, `VisibleGraphImpl`).
 //! Upstream has no direct tests for this path; expected values follow from the upstream algorithms
 //! (and from the ported `containingBranches` fixtures).
 
@@ -119,9 +119,7 @@ fn children_and_containing_branches() {
 #[test]
 fn visible_graph_normal_rows() {
     let graph = permanent_graph(NOT_FULL_GRAPH, &["a0", "a2"]);
-    let visible = graph
-        .create_visible_graph(Options::DEFAULT, None, None)
-        .unwrap();
+    let visible = graph.create_visible_graph(Options::DEFAULT, None, None);
 
     assert_eq!(visible.visible_commit_count(), 5);
     assert_eq!(
@@ -161,9 +159,7 @@ fn visible_graph_print_elements_and_colors() {
         |a: &String, b: &String| a.cmp(b),
         &set(&["a0", "a2"]),
     );
-    let visible = graph
-        .create_visible_graph_sorted(SortType::Normal, None, None)
-        .unwrap();
+    let visible = graph.create_visible_graph_sorted(SortType::Normal, None, None);
 
     // row 0: node a0 with its down edges to a1 and a3 and to the not-loaded a6
     let elements = visible.get_row_info(0).print_elements();
@@ -190,9 +186,7 @@ fn long_edge_arrow_actions() {
     }
     text.push_str("n40|-\n");
     let graph = permanent_graph(&text, &[]);
-    let mut visible = graph
-        .create_visible_graph(Options::DEFAULT, None, None)
-        .unwrap();
+    let mut visible = graph.create_visible_graph(Options::DEFAULT, None, None);
 
     // long edges are hidden by default: at row 1 the edge ends in a terminal down arrow
     assert!(visible.action_controller().are_long_edges_hidden());
@@ -232,14 +226,6 @@ fn long_edge_arrow_actions() {
     assert_eq!(click.cursor_to_set, Some(Cursor::Default));
     assert!(click.do_jump);
 
-    // a click on a node goes to the BaseController: default cursor, nothing to jump to
-    let node = visible.get_row_info(5).print_elements().pop().unwrap();
-    let answer = visible
-        .action_controller()
-        .perform_action(GraphAction::new(Some(node), GraphActionType::MouseClick));
-    assert_eq!(answer.cursor_to_set, Some(Cursor::Default));
-    assert!(answer.commit_to_jump.is_none());
-
     // hidden long edges are not drawn in the middle; shown ones are (with arrows next to the ends)
     let long_edge_parts = |visible: &ig_log::facade::visible_graph_impl::VisibleGraphImpl<
         String,
@@ -262,45 +248,63 @@ fn long_edge_arrow_actions() {
             .iter()
             .any(|e| matches!(e, GraphPrintElement::Edge(edge) if edge.has_arrow()))
     );
+
+    // a click on a node collapses its linear fragment (CollapsedController): n2..=n38 are hidden
+    // behind a dotted edge n1 - n39; nothing to jump to
+    let node = visible.get_row_info(5).print_elements().pop().unwrap();
+    let answer = visible
+        .action_controller()
+        .perform_action(GraphAction::new(Some(node), GraphActionType::MouseClick));
+    assert_eq!(answer.cursor_to_set, None);
+    assert!(answer.commit_to_jump.is_none());
+    assert_eq!(
+        format!("{visible:?}"),
+        r#"VisibleGraph["n0", "n1", "n39", "n40"]"#
+    );
 }
 
 #[test]
-fn unsupported_options_are_errors() {
+fn every_option_is_supported() {
     let graph = permanent_graph(NOT_FULL_GRAPH, &[]);
-    let heads = set(&["a0"]);
-    assert!(
-        graph
-            .create_visible_graph(Options::Base(SortType::Bek), None, None)
-            .is_err()
+    let heads = set(&["a2"]);
+    let shown = |options, heads: Option<&HashSet<String>>, matched: Option<&HashSet<String>>| {
+        format!("{:?}", graph.create_visible_graph(options, heads, matched))
+    };
+    assert_eq!(
+        shown(Options::Base(SortType::Bek), None, None),
+        r#"VisibleGraph["a2", "a0", "a3", "a1", "a4"]"#
     );
-    assert!(
-        graph
-            .create_visible_graph(Options::LinearBek, None, None)
-            .is_err()
+    assert_eq!(
+        shown(Options::LinearBek, None, None),
+        r#"VisibleGraph["a2", "a0", "a3", "a1", "a4"]"#
     );
-    assert!(
-        graph
-            .create_visible_graph(Options::FirstParent, None, None)
-            .is_err()
+    assert_eq!(
+        shown(Options::FirstParent, None, None),
+        r#"VisibleGraph["a0", "a1", "a2", "a3", "a4"]"#
     );
-    assert!(
-        graph
-            .create_visible_graph(Options::DEFAULT, Some(&heads), None)
-            .is_err()
+    assert_eq!(
+        shown(Options::DEFAULT, Some(&heads), None),
+        r#"VisibleGraph["a2", "a3"]"#
     );
-    let error = graph
-        .create_visible_graph(Options::DEFAULT, None, Some(&heads))
-        .unwrap_err();
-    assert!(error.to_string().contains("Plan 2b"), "{error}");
+    assert_eq!(
+        shown(Options::DEFAULT, None, Some(&set(&["a0", "a3", "a4"]))),
+        r#"VisibleGraph["a0", "a3", "a4"]"#
+    );
+    assert_eq!(
+        shown(Options::LinearBek, Some(&heads), None),
+        r#"VisibleGraph["a2", "a3"]"#
+    );
+    assert_eq!(
+        shown(Options::FirstParent, Some(&heads), None),
+        r#"VisibleGraph["a2", "a3"]"#
+    );
 }
 
 #[test]
 fn empty_graph() {
     let graph = permanent_graph("", &[]);
     assert!(graph.all_commits().is_empty());
-    let visible = graph
-        .create_visible_graph(Options::DEFAULT, None, None)
-        .unwrap();
+    let visible = graph.create_visible_graph(Options::DEFAULT, None, None);
     assert_eq!(visible.visible_commit_count(), 0);
     assert_eq!(visible.recommended_width(), 0);
 }

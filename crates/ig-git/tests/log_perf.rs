@@ -3,6 +3,10 @@
 //!
 //! Ignored by default. Run in release mode to see the timings:
 //! `cargo test --release -p ig-git --test log_perf -- --ignored --nocapture`
+//!
+//! `graph_options_on_50k_commits` times the visible graphs of every sort and filter option (BEK,
+//! linear BEK, first-parent, branch and commit filters) and a fragment hover on the same
+//! repository.
 
 mod common;
 
@@ -15,13 +19,15 @@ use std::time::{Duration, Instant};
 
 use common::log_helpers::{commit_at, provider};
 use common::{git, git_command};
+use ig_log::actions::{GraphAction, GraphActionType};
+use ig_log::api::printer::GraphPrintElement;
 use ig_log::data::graph_data::build_data;
 use ig_log::data::refresher::compact_commit;
 use ig_log::data::{
     InMemoryStorage, LogProviders, RootRefsModel, VcsLogProvider, VcsLogRefresher, VcsLogStorage,
     vcs_root,
 };
-use ig_log::{Options, PermanentGraph, VisibleGraph};
+use ig_log::{Options, PermanentGraph, SortType, VisibleGraph};
 
 const TOTAL_COMMITS: usize = 50_000;
 
@@ -210,9 +216,7 @@ fn load_50k_commits() {
 
     let graph = pack.permanent_graph().unwrap();
     let start = Instant::now();
-    let visible = graph
-        .create_visible_graph(Options::DEFAULT, None, None)
-        .unwrap();
+    let visible = graph.create_visible_graph(Options::DEFAULT, None, None);
     let t_visible = start.elapsed();
     assert_eq!(visible.visible_commit_count() as usize, commits);
 
@@ -304,4 +308,115 @@ fn load_50k_commits() {
         ms(t_refresh_tags),
         ms(t_refresh_tags / NEW_TAGS as u32)
     );
+}
+
+#[test]
+#[ignore = "performance smoke test; run with --release -- --ignored --nocapture"]
+fn graph_options_on_50k_commits() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("big");
+    std::fs::create_dir_all(&dir).unwrap();
+    let (commits, branches) = generate_repository(&dir);
+    let root = vcs_root(&dir);
+    let provider = Arc::new(provider());
+    let mut timed = Vec::with_capacity(commits);
+    let data = provider
+        .read_all_hashes(&root, &mut |c| timed.push(c))
+        .unwrap();
+    let storage: Arc<dyn VcsLogStorage> = Arc::new(InMemoryStorage::new());
+    let graph_commits: Vec<_> = timed
+        .iter()
+        .map(|c| compact_commit(storage.as_ref(), c, &root))
+        .collect();
+    let refs = RootRefsModel::create(data.refs.iter().cloned(), storage.as_ref());
+    let mut providers = LogProviders::new();
+    providers.insert(root.clone(), provider.clone() as Arc<dyn VcsLogProvider>);
+    let pack = build_data(
+        &graph_commits,
+        BTreeMap::from([(root.clone(), Arc::new(refs))]),
+        &providers,
+        &storage,
+        true,
+    );
+    let graph = pack.permanent_graph().unwrap();
+    eprintln!("{commits} commits, {branches} branches");
+
+    let timed_graph = |label: &str, options, heads, matched| {
+        let start = Instant::now();
+        let visible = graph.create_visible_graph(options, heads, matched);
+        let elapsed = start.elapsed();
+        eprintln!(
+            "{label:<40} {}  ({} rows)",
+            ms(elapsed),
+            visible.visible_commit_count()
+        );
+        visible
+    };
+    let mut normal = timed_graph("Normal (CollapsedController)", Options::DEFAULT, None, None);
+    timed_graph(
+        "Bek (first: computes the BEK map)",
+        Options::Base(SortType::Bek),
+        None,
+        None,
+    );
+    timed_graph(
+        "Bek (shared BEK map)",
+        Options::Base(SortType::Bek),
+        None,
+        None,
+    );
+    let mut linear_bek = timed_graph("LinearBek", Options::LinearBek, None, None);
+    timed_graph("FirstParent", Options::FirstParent, None, None);
+
+    let head = normal.get_row_info(0).commit();
+    let heads = std::collections::HashSet::from([head]);
+    timed_graph(
+        "Normal, one visible branch",
+        Options::DEFAULT,
+        Some(&heads),
+        None,
+    );
+    timed_graph(
+        "LinearBek, one visible branch",
+        Options::LinearBek,
+        Some(&heads),
+        None,
+    );
+    let matched: std::collections::HashSet<_> = (0..normal.visible_commit_count())
+        .step_by(3)
+        .map(|row| normal.get_row_info(row).commit())
+        .collect();
+    timed_graph(
+        "Normal, every third commit matched",
+        Options::DEFAULT,
+        None,
+        Some(&matched),
+    );
+
+    // fragment hover on a commit in the middle of the main line
+    let row = normal.visible_commit_count() / 2;
+    let node = normal
+        .get_row_info(row)
+        .print_elements()
+        .into_iter()
+        .find(|e| matches!(e, GraphPrintElement::Node(_)))
+        .unwrap();
+    let start = Instant::now();
+    normal
+        .action_controller()
+        .perform_action(GraphAction::new(Some(node), GraphActionType::MouseOver));
+    eprintln!("{:<40} {}", "fragment hover (Normal)", ms(start.elapsed()));
+
+    // linear BEK hover walks up to the first merge that answers (upstream quirk)
+    let node = linear_bek
+        .get_row_info(row)
+        .print_elements()
+        .into_iter()
+        .find(|e| matches!(e, GraphPrintElement::Node(_)))
+        .unwrap();
+    let start = Instant::now();
+    linear_bek
+        .action_controller()
+        .perform_action(GraphAction::new(Some(node), GraphActionType::MouseOver));
+    eprintln!("{:<40} {}", "merge hover (LinearBek)", ms(start.elapsed()));
 }

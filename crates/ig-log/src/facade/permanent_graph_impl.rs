@@ -2,13 +2,19 @@
 //!
 //! Ported from `platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/PermanentGraphImpl.kt`.
 //!
+//! [`create_visible_graph`](PermanentGraph::create_visible_graph) builds upstream's controller
+//! chains (`createFilteredController`):
+//! - `Base(Normal)` / `Base(Bek)`: [`BaseController`] / [`SortedBaseController`], wrapped in a
+//!   [`FilteredController`] if commits are matched, otherwise in a [`CollapsedController`] (which
+//!   also shows only the visible branches);
+//! - `FirstParent`: [`BaseController`] in a first-parent [`FilteredController`];
+//! - `LinearBek`: [`LinearBekController`] over [`SortedBaseController`], wrapped in a
+//!   [`FilteredController`] if commits are matched, otherwise in a [`BranchFilterController`] if
+//!   branches are filtered.
+//!
 //! Deviations:
-//! - Only `Options::Base(SortType::Normal)` without branch or text filters is supported; other
-//!   options fail with [`UnsupportedGraphOptions`] (Plan 2b ports BEK, linear BEK, first-parent,
-//!   `CollapsedController` and `FilteredController`).
-//! - The unfiltered `Normal` graph uses [`BaseController`] directly. Upstream wraps it in a
-//!   `CollapsedController` with every node visible, whose compiled graph is identical; only the
-//!   collapse/expand and fragment hover actions are missing (see `VisibleGraphImpl`).
+//! - Upstream's `bekIntMap by lazy` is a `OnceLock`: the BEK order is computed the first time a
+//!   `Bek` or `LinearBek` visible graph is created, then shared by every later one.
 //! - Branch node ids are passed to the layout builder sorted ascending (upstream: hash-set order,
 //!   which only matters for heads that `head_commits_comparator` considers equal).
 //! - The `Int`-specialised commit and condition classes are not needed.
@@ -16,17 +22,25 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use crate::api::GraphLayout;
 use crate::api::linear_graph::LinearGraph;
 use crate::api::permanent::{PermanentCommitsInfo, PermanentGraphInfo, VcsLogGraphNodeId};
 use crate::api::printer::{GraphColorGetter, GraphColorGetterFactory};
+use crate::collapsing::branch_filter_controller::BranchFilterController;
+use crate::collapsing::collapsed_controller::CollapsedController;
 use crate::facade::base_controller::BaseController;
+use crate::facade::filtered_controller::FilteredController;
+use crate::facade::first_parent_controller;
 use crate::facade::linear_graph_controller::LinearGraphController;
 use crate::facade::reachable_nodes::ReachableNodes;
+use crate::facade::sort::bek::bek_sorter;
+use crate::facade::sort::sort_index_map::SortIndexMap;
+use crate::facade::sort::sorted_base_controller::SortedBaseController;
 use crate::facade::visible_graph_impl::VisibleGraphImpl;
 use crate::graph_commit::{GraphCommit, GraphCommitImpl};
+use crate::linear_bek::linear_bek_controller::LinearBekController;
 use crate::permanent::graph_layout_builder;
 use crate::permanent::graph_layout_impl::GraphLayoutImpl;
 use crate::permanent::permanent_commits_info_impl::PermanentCommitsInfoImpl;
@@ -34,7 +48,6 @@ use crate::permanent::permanent_linear_graph_builder::PermanentLinearGraphBuilde
 use crate::permanent::permanent_linear_graph_impl::PermanentLinearGraphImpl;
 use crate::permanent_graph::{
     AllCommits, ContainedInBranchCondition, Options, PermanentGraph, SortType,
-    UnsupportedGraphOptions,
 };
 use crate::utils::linear_graph_utils::{
     LiteLinearGraphAdapter, as_lite_linear_graph, get_up_nodes,
@@ -85,6 +98,7 @@ impl<CommitId: Clone> NotLoadedCommitsIdsGenerator<CommitId> {
 
 pub struct PermanentGraphImpl<CommitId> {
     parts: Arc<PermanentGraphParts<CommitId>>,
+    bek_int_map: OnceLock<Arc<SortIndexMap>>,
     graph_color_getter: Arc<dyn GraphColorGetter>,
     reachable_nodes: ReachableNodes<LiteLinearGraphAdapter<Arc<PermanentLinearGraphImpl>>>,
 }
@@ -138,6 +152,7 @@ impl<CommitId: CommitIdBounds> PermanentGraphImpl<CommitId> {
 
         PermanentGraphImpl {
             parts,
+            bek_int_map: OnceLock::new(),
             graph_color_getter,
             reachable_nodes,
         }
@@ -160,35 +175,87 @@ impl<CommitId: CommitIdBounds> PermanentGraphImpl<CommitId> {
         &self.parts.permanent_graph_layout
     }
 
+    /// The BEK order of the permanent graph, computed on first use (`bekIntMap by lazy`).
+    pub fn bek_int_map(&self) -> Arc<SortIndexMap> {
+        self.bek_int_map
+            .get_or_init(|| {
+                Arc::new(bek_sorter::create_bek_map(
+                    &*self.parts.permanent_linear_graph,
+                    &self.parts.permanent_graph_layout,
+                    self.parts.permanent_commits_info.timestamp_getter(),
+                ))
+            })
+            .clone()
+    }
+
+    /// The controller chain for `options` (`createFilteredController`). Unknown commits in
+    /// `visible_heads` / `matching_commits` are skipped.
     fn create_filtered_controller(
         &self,
         options: Options,
         visible_heads: Option<&HashSet<CommitId>>,
         matching_commits: Option<&HashSet<CommitId>>,
-    ) -> Result<Box<dyn LinearGraphController>, UnsupportedGraphOptions> {
+    ) -> Box<dyn LinearGraphController> {
+        let info = &self.parts.permanent_commits_info;
+        let visible_heads_ids = visible_heads.map(|heads| info.convert_to_node_ids(heads));
+        let matching_commit_ids = matching_commits.map(|commits| info.convert_to_node_ids(commits));
+        let permanent_graph_info = self.permanent_graph_info();
+
         match options {
-            Options::Base(SortType::Normal) => {
-                if matching_commits.is_some() {
-                    return Err(UnsupportedGraphOptions(
-                        "Filtering by matched commits (FilteredController)".to_string(),
+            Options::Base(sort_type) => {
+                let base_controller: Box<dyn LinearGraphController> = match sort_type {
+                    SortType::Normal => Box::new(BaseController::new(permanent_graph_info.clone())),
+                    SortType::Bek => Box::new(SortedBaseController::new(
+                        &*permanent_graph_info,
+                        self.bek_int_map(),
+                    )),
+                };
+                if let Some(matching_commit_ids) = &matching_commit_ids {
+                    return Box::new(FilteredController::create(
+                        base_controller,
+                        &*permanent_graph_info,
+                        matching_commit_ids,
+                        visible_heads_ids.as_ref(),
                     ));
                 }
-                if visible_heads.is_some() {
-                    return Err(UnsupportedGraphOptions(
-                        "Filtering by visible branches (CollapsedController)".to_string(),
-                    ));
-                }
-                Ok(Box::new(BaseController::new(self.permanent_graph_info())))
+                Box::new(CollapsedController::new(
+                    base_controller,
+                    permanent_graph_info,
+                    visible_heads_ids.as_ref(),
+                ))
             }
-            Options::Base(SortType::Bek) => Err(UnsupportedGraphOptions(
-                "SortType.Bek (SortedBaseController)".to_string(),
-            )),
-            Options::FirstParent => Err(UnsupportedGraphOptions(
-                "Options.FirstParent (FirstParentController)".to_string(),
-            )),
-            Options::LinearBek => Err(UnsupportedGraphOptions(
-                "Options.LinearBek (LinearBekController)".to_string(),
-            )),
+            Options::FirstParent => {
+                let base_controller = Box::new(BaseController::new(permanent_graph_info.clone()));
+                Box::new(first_parent_controller::create(
+                    base_controller,
+                    &*permanent_graph_info,
+                    matching_commit_ids.as_ref(),
+                    visible_heads_ids.as_ref(),
+                ))
+            }
+            Options::LinearBek => {
+                let base_controller: Box<dyn LinearGraphController> =
+                    Box::new(LinearBekController::new(
+                        SortedBaseController::new(&*permanent_graph_info, self.bek_int_map()),
+                        permanent_graph_info.clone(),
+                    ));
+                if let Some(matching_commit_ids) = &matching_commit_ids {
+                    return Box::new(FilteredController::create(
+                        base_controller,
+                        &*permanent_graph_info,
+                        matching_commit_ids,
+                        visible_heads_ids.as_ref(),
+                    ));
+                }
+                if let Some(visible_heads_ids) = &visible_heads_ids {
+                    return Box::new(BranchFilterController::new(
+                        base_controller,
+                        &*permanent_graph_info,
+                        Some(visible_heads_ids),
+                    ));
+                }
+                base_controller
+            }
         }
     }
 
@@ -200,15 +267,15 @@ impl<CommitId: CommitIdBounds> PermanentGraphImpl<CommitId> {
         visible_heads: Option<&HashSet<CommitId>>,
         matching_commits: Option<&HashSet<CommitId>>,
         preprocessor: impl FnOnce(&mut dyn LinearGraphController, &dyn PermanentGraphInfo<CommitId>),
-    ) -> Result<VisibleGraphImpl<CommitId>, UnsupportedGraphOptions> {
+    ) -> VisibleGraphImpl<CommitId> {
         let mut controller =
-            self.create_filtered_controller(options, visible_heads, matching_commits)?;
+            self.create_filtered_controller(options, visible_heads, matching_commits);
         preprocessor(controller.as_mut(), &*self.parts);
-        Ok(VisibleGraphImpl::new(
+        VisibleGraphImpl::new(
             controller,
             self.permanent_graph_info(),
             self.graph_color_getter.clone(),
-        ))
+        )
     }
 }
 
@@ -220,7 +287,7 @@ impl<CommitId: CommitIdBounds> PermanentGraph<CommitId> for PermanentGraphImpl<C
         options: Options,
         heads_of_visible_branches: Option<&HashSet<CommitId>>,
         matched_commits: Option<&HashSet<CommitId>>,
-    ) -> Result<VisibleGraphImpl<CommitId>, UnsupportedGraphOptions> {
+    ) -> VisibleGraphImpl<CommitId> {
         self.create_visible_graph_with(
             options,
             heads_of_visible_branches,

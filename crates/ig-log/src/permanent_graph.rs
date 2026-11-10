@@ -2,9 +2,8 @@
 //!
 //! Ported from `platform/vcs-log/graph-api/src/com/intellij/vcs/log/graph/PermanentGraph.kt`.
 //!
-//! Deviations: `create_visible_graph` returns `Result`, failing with [`UnsupportedGraphOptions`]
-//! for options that are not ported yet (Plan 2b); `all_commits` returns a lazy [`AllCommits`]
-//! view; `get_contained_in_branch_condition` returns a [`ContainedInBranchCondition`].
+//! Deviations: `all_commits` returns a lazy [`AllCommits`] view;
+//! `get_contained_in_branch_condition` returns a [`ContainedInBranchCondition`].
 
 use std::collections::HashSet;
 use std::fmt;
@@ -56,11 +55,6 @@ impl Options {
     /// `Options.Default`.
     pub const DEFAULT: Options = Options::Base(SortType::Normal);
 }
-
-/// `create_visible_graph` was asked for something this port does not support yet.
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-#[error("{0} is not yet supported by ig-log (Plan 2b)")]
-pub struct UnsupportedGraphOptions(pub String);
 
 /// Lazy list of all commits of a permanent graph, with parents read back from the graph.
 pub struct AllCommits<'a, Id> {
@@ -124,13 +118,14 @@ pub trait PermanentGraph<Id> {
     type Visible: VisibleGraph<Id> + Send;
 
     /// Creates a visible graph. `heads_of_visible_branches == None` means all branches are visible;
-    /// `matched_commits == None` means all commits are visible.
+    /// `matched_commits == None` means all commits are visible. Ids that are not in the graph are
+    /// skipped.
     fn create_visible_graph(
         &self,
         options: Options,
         heads_of_visible_branches: Option<&HashSet<Id>>,
         matched_commits: Option<&HashSet<Id>>,
-    ) -> Result<Self::Visible, UnsupportedGraphOptions>;
+    ) -> Self::Visible;
 
     /// `createVisibleGraph(sortType, ...)`: same as `Options::Base(sort_type)`.
     fn create_visible_graph_sorted(
@@ -138,7 +133,7 @@ pub trait PermanentGraph<Id> {
         sort_type: SortType,
         heads_of_visible_branches: Option<&HashSet<Id>>,
         matched_commits: Option<&HashSet<Id>>,
-    ) -> Result<Self::Visible, UnsupportedGraphOptions> {
+    ) -> Self::Visible {
         self.create_visible_graph(
             Options::Base(sort_type),
             heads_of_visible_branches,

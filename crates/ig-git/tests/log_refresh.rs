@@ -233,9 +233,7 @@ fn multi_repo_initial_load() {
     assert_eq!(best.name(), "master");
     assert!(graph.get_containing_branches(&a_head).contains(&a_head));
 
-    let visible = graph
-        .create_visible_graph(Options::DEFAULT, None, None)
-        .unwrap();
+    let visible = graph.create_visible_graph(Options::DEFAULT, None, None);
     assert_eq!(visible.visible_commit_count(), 12);
 }
 
