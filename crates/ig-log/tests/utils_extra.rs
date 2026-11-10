@@ -1,4 +1,4 @@
-//! IdeaGit tests for `java_sort` and `DfsWalk`. Upstream has no tests for these helpers.
+//! IdeaGit tests for `java_sort`, `DfsWalk` and `graph_util`. Upstream has no tests for these cases.
 
 use std::cmp::Ordering;
 
@@ -95,4 +95,34 @@ fn dfs_false_on_start_node_ends_whole_walk() {
         n != 0
     });
     assert_eq!(seen, vec![0]);
+}
+
+/// Bug fix (IdeaGit): upstream's `getReachableNodes(null)` throws for an empty graph.
+#[test]
+fn reachable_nodes_of_an_empty_graph() {
+    use ig_log::api::EdgeFilter;
+    use ig_log::api::elements::{GraphEdge, GraphNode};
+    use ig_log::api::linear_graph::LinearGraph;
+    use ig_log::utils::graph_util::get_reachable_nodes;
+
+    struct Empty;
+    impl LinearGraph for Empty {
+        fn nodes_count(&self) -> i32 {
+            0
+        }
+        fn get_adjacent_edges(&self, _: i32, _: EdgeFilter) -> Vec<GraphEdge> {
+            unreachable!()
+        }
+        fn get_graph_node(&self, _: i32) -> GraphNode {
+            unreachable!()
+        }
+        fn get_node_id(&self, _: i32) -> i32 {
+            unreachable!()
+        }
+        fn get_node_index(&self, _: i32) -> Option<i32> {
+            unreachable!()
+        }
+    }
+    let visibility = get_reachable_nodes(&Empty, None);
+    assert!(!visibility.get(0));
 }

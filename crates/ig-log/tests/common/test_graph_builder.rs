@@ -2,8 +2,9 @@
 //!
 //! Ported from `platform/vcs-log/graph/test/com/intellij/vcs/log/graph/TestGraphBuilder.kt`
 //! (`BaseTestGraphBuilder`, `TestGraphBuilder`, `graph { }`). Kotlin's `1(2, 3.dot)` becomes
-//! `b.node(1, [u(2), dot(3)])`; `2.UNM(3)` becomes `b.node(unm(2), [u(3)])`.
-//! `asTestGraphString` and `TestPermanentGraphInfo` are not needed by the ported tests yet.
+//! `b.node(1, [u(2), dot(3)])`; `2.UNM(3)` becomes `b.node(unm(2), [u(3)])`. The
+//! [`test_graph!`](crate::common::test_graph_builder::test_graph) macro accepts the Kotlin syntax
+//! itself (`test_graph! { 1(2, 3.dot) 2.UNM(3) 3() }`).
 
 use std::collections::HashMap;
 
@@ -112,6 +113,69 @@ impl TestGraphBuilder {
         TestLinearGraph::new(self.nodes)
     }
 }
+
+/// `graph { ... }` with the Kotlin DSL's syntax: `0(1, 2.dot)`, `2.UNM(3)`, `4.NOT_LOAD()`, `3()`.
+/// Edges are `n` / `n.u` (usual) and `n.dot` (dotted).
+#[allow(unused_macros)]
+macro_rules! test_graph {
+    ($($nodes:tt)*) => {{
+        #[allow(unused_mut)]
+        let mut builder = $crate::common::test_graph_builder::TestGraphBuilder::default();
+        $crate::common::test_graph_builder::test_graph_nodes!(builder; $($nodes)*);
+        builder.done()
+    }};
+}
+#[allow(unused_imports)]
+pub(crate) use test_graph;
+
+#[allow(unused_macros)]
+macro_rules! test_graph_nodes {
+    ($b:ident;) => {};
+    ($b:ident; $id:literal . UNM ($($edges:tt)*) $($rest:tt)*) => {
+        $b.node(
+            $crate::common::test_graph_builder::unm($id),
+            $crate::common::test_graph_builder::test_graph_edges!($($edges)*),
+        );
+        $crate::common::test_graph_builder::test_graph_nodes!($b; $($rest)*);
+    };
+    ($b:ident; $id:literal . NOT_LOAD ($($edges:tt)*) $($rest:tt)*) => {
+        $b.node(
+            $crate::common::test_graph_builder::not_load_node($id),
+            $crate::common::test_graph_builder::test_graph_edges!($($edges)*),
+        );
+        $crate::common::test_graph_builder::test_graph_nodes!($b; $($rest)*);
+    };
+    ($b:ident; $id:literal ($($edges:tt)*) $($rest:tt)*) => {
+        $b.node(
+            $id,
+            $crate::common::test_graph_builder::test_graph_edges!($($edges)*),
+        );
+        $crate::common::test_graph_builder::test_graph_nodes!($b; $($rest)*);
+    };
+}
+#[allow(unused_imports)]
+pub(crate) use test_graph_nodes;
+
+#[allow(unused_macros)]
+macro_rules! test_graph_edges {
+    () => {
+        ::std::vec::Vec::<$crate::common::test_graph_builder::SimpleEdge>::new()
+    };
+    ($($id:literal $(. $kind:ident)?),+ $(,)?) => {
+        ::std::vec![$($crate::common::test_graph_builder::test_graph_edges!(@edge $id $(. $kind)?)),+]
+    };
+    (@edge $id:literal) => {
+        $crate::common::test_graph_builder::u($id)
+    };
+    (@edge $id:literal . u) => {
+        $crate::common::test_graph_builder::u($id)
+    };
+    (@edge $id:literal . dot) => {
+        $crate::common::test_graph_builder::dot($id)
+    };
+}
+#[allow(unused_imports)]
+pub(crate) use test_graph_edges;
 
 /// `graph { ... }`
 pub fn graph(f: impl FnOnce(&mut TestGraphBuilder)) -> TestLinearGraph {
