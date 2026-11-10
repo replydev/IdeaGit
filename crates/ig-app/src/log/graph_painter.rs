@@ -155,6 +155,12 @@ impl GraphGeometry {
         self.element_width * position as f32 + self.element_center
     }
 
+    /// The center of a node at `position` in a row (row coordinates), where
+    /// [`element_under`](Self::element_under) finds it.
+    pub fn node_center(&self, position: i32) -> (f32, f32) {
+        (self.x(position), self.row_center)
+    }
+
     /// `GraphCommitCellUtil.getGraphWidth`: the width taken by the graph before the text.
     pub fn graph_width(&self, elements: &[GraphPrintElement], recommended_width: i32) -> f32 {
         if elements.is_empty() {

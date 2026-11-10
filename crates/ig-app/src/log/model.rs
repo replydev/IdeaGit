@@ -3,8 +3,9 @@
 //!
 //! Graph actions follow `platform/vcs-log/impl/src/com/intellij/vcs/log/ui/table/GraphCommitCellController.java`
 //! and `VcsLogGraphTable.handleAnswer`: hovering an element asks the `ActionController` (it
-//! highlights the edge and sets the hand cursor); clicking an arrow jumps to the commit it points
-//! to (select + scroll). Print elements are snapshots, so rows are re-read on every repaint.
+//! highlights the edge, or the linear fragment of a node, and sets the hand cursor); clicking an
+//! arrow jumps to the commit it points to (select + scroll), clicking a node or edge collapses or
+//! expands its fragment. Print elements are snapshots, so rows are re-read on every repaint.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -354,8 +355,9 @@ impl LogModel {
         true
     }
 
-    /// Clicks a print element of the current graph (an arrow jumps to its target). Elements the
-    /// current graph doesn't print (e.g. from an older snapshot) are ignored.
+    /// Clicks a print element of the current graph (an arrow jumps to its target, a node or edge
+    /// collapses or expands its fragment). Elements the current graph doesn't print (e.g. from an
+    /// older snapshot) are ignored.
     pub fn click_element(&mut self, element: GraphPrintElement) {
         use ig_log::print_element::PrintElement as _;
         let current = usize::try_from(element.row_index())
@@ -364,6 +366,12 @@ impl LogModel {
             .is_some_and(|(_, elements)| elements.contains(&element));
         if current {
             self.perform(GraphAction::new(Some(element), GraphActionType::MouseClick));
+            // `GraphCommitCellController.handleGraphAnswer` with `dataCouldChange`: a click may
+            // have collapsed or expanded the graph, so rows may have moved; the selection is kept
+            // by commit, minus the commits no longer shown
+            self.generation += 1;
+            self.hovered_element = None;
+            self.with_rows(|s, rows| s.retain_visible(rows));
         }
     }
 

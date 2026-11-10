@@ -1,5 +1,6 @@
 //! UI tests with GPUI's `TestAppContext` (headless, no GPU): the Log loads, selects and scrolls,
-//! an arrow click jumps, Page Down pages by the visible rows, Refresh reaches the worker, the Log
+//! an arrow click jumps, hovering a node highlights its fragment and clicking it collapses the
+//! fragment, Page Down pages by the visible rows, Refresh reaches the worker, the Log
 //! fills the main area with focus, the Console tool window shows/hides (removed entirely, its
 //! height kept) and gives focus back to the Log, Cmd/Alt+9 focuses the Log, Open Recent opens by
 //! path, and a folder opens in one window only. Every git (the tests' and the app's) runs with an
@@ -24,6 +25,7 @@ use ig_app::actions::{
     ActivateConsoleToolWindow, ActivateVersionControlToolWindow, HideActiveWindow,
 };
 use ig_app::app::{AppState, GitEnvironment};
+use ig_app::log::metadata::Lookup;
 use ig_app::log::model::{LogModel, LogState};
 use ig_app::menus::OpenRecent;
 use ig_app::project::ProjectWindow;
@@ -225,6 +227,147 @@ fn arrow_click_jumps_to_the_target_row(cx: &mut TestAppContext) {
             target.abs_diff(from) > 10,
             "jumped from row {from} to {target}"
         );
+    });
+}
+
+/// `main`: c0, c1, c2, a merge of `feature` (f0, f1, f2, forked from c1, then deleted) and c3.
+fn repo_with_a_merge() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let d = dir.path();
+    git(d, &["init", "-q"]);
+    git(d, &["symbolic-ref", "HEAD", "refs/heads/main"]);
+    let commit = |message: &str| git(d, &["commit", "-q", "--allow-empty", "-m", message]);
+    commit("c0");
+    commit("c1");
+    git(d, &["checkout", "-q", "-b", "feature"]);
+    commit("f0");
+    commit("f1");
+    commit("f2");
+    git(d, &["checkout", "-q", "main"]);
+    commit("c2");
+    git(d, &["merge", "-q", "--no-ff", "-m", "merge", "feature"]);
+    git(d, &["branch", "-q", "-D", "feature"]);
+    commit("c3");
+    dir
+}
+
+fn subject(m: &mut LogModel, row: usize) -> String {
+    let (commit, _) = m.row(row).unwrap();
+    match m.metadata(commit) {
+        Lookup::Loaded(meta) => meta.subject.clone(),
+        _ => panic!("no metadata for row {row}"),
+    }
+}
+
+fn row_of(m: &mut LogModel, subject_of_row: &str) -> usize {
+    (0..m.row_count())
+        .find(|&row| subject(m, row) == subject_of_row)
+        .unwrap_or_else(|| panic!("no row {subject_of_row}"))
+}
+
+/// Subjects of the rows whose node is painted selected.
+fn selected_nodes(m: &mut LogModel) -> Vec<String> {
+    use ig_log::print_element::PrintElement;
+    let rows: Vec<usize> = (0..m.row_count())
+        .filter(|&row| {
+            m.row(row)
+                .unwrap()
+                .1
+                .iter()
+                .any(|e| matches!(e, GraphPrintElement::Node(_)) && e.is_selected())
+        })
+        .collect();
+    let mut subjects: Vec<String> = rows.into_iter().map(|row| subject(m, row)).collect();
+    subjects.sort();
+    subjects
+}
+
+#[gpui::test]
+fn hovering_a_node_highlights_its_fragment(cx: &mut TestAppContext) {
+    use ig_app::log::graph_painter::{Color, Shape};
+    use ig_log::print_element::PrintElement;
+
+    let dir = repo_with_a_merge();
+    let model = log_model(cx, dir.path());
+    model.update(cx, |m, _| m.request_metadata(0..m.row_count()));
+    wait(cx, &model, |m| {
+        m.metadata_loaded_for(m.row_count()) && !m.is_busy()
+    });
+
+    let geometry = ig_app::log::graph_painter::GraphGeometry::new(26.0, 2.0);
+    model.update(cx, |m, _| {
+        assert_eq!(m.row_count(), 8);
+        assert!(selected_nodes(m).is_empty());
+
+        // hover the node of f1, in the middle of the merged branch
+        let row = row_of(m, "f1");
+        let elements = m.row(row).unwrap().1;
+        let node = elements
+            .iter()
+            .find(|e| matches!(e, GraphPrintElement::Node(_)))
+            .unwrap();
+        let (x, y) = geometry.node_center(node.position_in_current_row());
+        assert!(m.hover_graph(row, x, y, &geometry));
+        assert!(m.hand_cursor);
+
+        // the linear fragment f2 - f1 - f0 is selected, nodes and the edges between them
+        assert_eq!(selected_nodes(m), ["f0", "f1", "f2"]);
+        let elements = m.row(row).unwrap().1;
+        assert!(
+            elements
+                .iter()
+                .any(|e| matches!(e, GraphPrintElement::Edge(_)) && e.is_selected())
+        );
+        // and painted selected: a thick outline in the mark color under the node
+        const MARK: u32 = 0x123456;
+        let shapes = geometry.shapes(&elements, |_| 0xffffff, MARK);
+        assert!(shapes.iter().any(|shape| matches!(
+            shape,
+            Shape::Circle {
+                color: Color::Rgb(MARK),
+                ..
+            } | Shape::Line { color: MARK, .. }
+        )));
+
+        // leaving the graph clears the highlight
+        assert!(m.unhover_graph());
+        assert!(selected_nodes(m).is_empty());
+    });
+}
+
+#[gpui::test]
+fn clicking_a_node_collapses_its_fragment(cx: &mut TestAppContext) {
+    use ig_log::print_element::PrintElement;
+
+    let dir = repo_with_a_merge();
+    let model = log_model(cx, dir.path());
+    model.update(cx, |m, _| m.request_metadata(0..m.row_count()));
+    wait(cx, &model, |m| {
+        m.metadata_loaded_for(m.row_count()) && !m.is_busy()
+    });
+
+    let geometry = ig_app::log::graph_painter::GraphGeometry::new(26.0, 2.0);
+    model.update(cx, |m, _| {
+        let c3 = row_of(m, "c3");
+        m.click_row(c3, false, false);
+        let generation = m.generation;
+        let row = row_of(m, "f1");
+        let node = m
+            .row(row)
+            .unwrap()
+            .1
+            .into_iter()
+            .find(|e| matches!(e, GraphPrintElement::Node(_)))
+            .unwrap();
+        let (x, y) = geometry.node_center(node.position_in_current_row());
+        assert!(m.click_graph(row, x, y, &geometry));
+        // f1 is hidden behind a dotted edge f2 - f0; rows moved, the selection is kept
+        assert_eq!(m.row_count(), 7);
+        assert!(m.generation > generation);
+        assert_eq!(m.selection.len(), 1);
+        let row = row_of(m, "c3");
+        let (c3_commit, _) = m.row(row).unwrap();
+        assert!(m.is_selected(c3_commit));
     });
 }
 
